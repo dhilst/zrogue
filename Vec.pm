@@ -1,0 +1,105 @@
+package Vec;
+
+use v5.36;
+use Carp;
+use List::Util;
+use Math::BigInt;
+use Exporter qw(import);
+
+use overload 
+    '""' => \&to_str,
+    '+'  => 'add',
+    '-'  => 'sub',
+    '*'  => 'scale',
+    'neg'=> 'neg',
+    fallback => 1;
+
+sub new($cls, @values) {
+    bless \@values, $cls;
+}
+
+sub combine :prototype(&$$) ($block, $self, $other) {
+    confess "invalid vec combination: $self x $other",
+        unless scalar $self->@* == scalar $other->@*;
+
+    my @values =
+        map { $block->($_->@*) }
+        List::Util::zip $self, $other;
+
+    Vec->new(@values);
+}
+
+sub to_str($self, @ignored) {
+    sprintf "(%s)", join ",", $self->@*;
+}
+
+sub add($self, $other, $swap = 0) {
+    return $other->add($self, 0)
+        if $swap;
+
+    Vec::combine { List::Util::sum(@_) } $self, $other;
+}
+
+sub neg($self, @ignored) {
+    Vec->new(map { - $_ } $self->@*);
+}
+
+sub sub($self, $other, $swap = 0) {
+    return $other->sub($self, 0)
+        if $swap;
+
+    Vec::combine { List::Util::sum(@_) } 
+    $self, $other->neg;
+}
+
+sub scale($self, $scalar, $swap = 0) {
+    confess "cannot commute vector mul"
+        unless $swap == 0;
+
+    Vec->new(map { $_ * $scalar } $self->@*);
+}
+
+sub length($self) {
+    sqrt(List::Util::sum map { $_ ** 2 } $self->@*);
+}
+
+sub direction_sqrt($self) {
+    my $l = $self->length;
+    Vec->new(map { $_ / $l } $self->@*);
+}
+
+sub direction_gcd($self) {
+    my $g = List::Util::reduce {
+        Math::BigInt::bgcd($a, abs $b)
+    } 0, $self->@*;
+
+    confess "0 GCD" if $g == 0;
+    Vec->new(map { $_ / $g } $self->@*);
+}
+
+sub direction_chebyshev($self) {
+    Vec->new(map { $_ <=> 0 } $self->@*);
+}
+
+sub dot($self, $other) {
+    confess "dimension mismatch"
+        unless  $self->@* == $other->@*;
+
+    List::Util::sum
+    map { List::Util::product($_->@*) }
+    List::Util::zip($self, $other);
+}
+
+sub as_point($self) {
+    Vec->new($self->@*, 1);
+}
+
+sub as_dir($self) {
+    Vec->new($self->@*, 0);
+}
+
+sub dim($self) {
+    scalar $self->@*;
+}
+
+1;
