@@ -23,3 +23,4 @@ $term->initscr('.');
 $term->write(0, 0, '@');
 $term->write(0, $term->cols, '#');
 
+

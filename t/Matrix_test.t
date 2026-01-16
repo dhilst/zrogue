@@ -44,10 +44,10 @@ is_deeply(
 
 my $p = Vec->new(2, 3, 1);
 
-my $t = Matrix::translate($p, 5, -2);
+my $t = Matrix::translate(5, -2);
 
 is_deeply(
-    $t,
+    $t * $p,
     Vec->new(7, 1, 1),
     'translation by (5, -2)'
 );
@@ -59,25 +59,25 @@ is_deeply(
 my $p2 = Vec->new(1, 0, 1);
 
 is_deeply(
-    Matrix::rot($p2, 0),
-    Vec->new(1, 0, 1),
-    'rotation 0°'
+    Matrix::rot(0) * $p2,
+    $p2,
+    'rotation 0° is identity'
 );
 
 is_deeply(
-    Matrix::rot($p2, 90),
+    Matrix::rot(90) * $p2,
     Vec->new(0, 1, 1),
     'rotation 90° CCW'
 );
 
 is_deeply(
-    Matrix::rot($p2, 180),
+    Matrix::rot(180) * $p2,
     Vec->new(-1, 0, 1),
     'rotation 180°'
 );
 
 is_deeply(
-    Matrix::rot($p2, 270),
+    Matrix::rot(270) * $p2,
     Vec->new(0, -1, 1),
     'rotation 270° CCW'
 );
@@ -87,8 +87,8 @@ is_deeply(
 # ----------------------------
 
 throws_ok {
-    Matrix::rot($p2, 45);
-} qr/invalid deg/, 'invalid rotation rejected';
+    Matrix::rot(45) * $p2;
+} qr/invalid deg/, 'invalid rotation rejected (only 90 deg is accepted)';
 
 
 # ----------------------------
@@ -98,13 +98,13 @@ throws_ok {
 $p = Vec->new(3, -4, 1);
 
 is_deeply(
-    Matrix::reflect_x($p),
+    Matrix::reflect_x() * $p,
     Vec->new(3, 4, 1),
     'reflect across X axis'
 );
 
 is_deeply(
-    Matrix::reflect_y($p),
+    Matrix::reflect_y() * $p,
     Vec->new(-3, -4, 1),
     'reflect across Y axis'
 );
@@ -113,44 +113,44 @@ is_deeply(
 $v = Vec->new(3, 4, 0);
 
 is_deeply(
-    Matrix::reflect_x($v),
+    Matrix::reflect_x() * $v,
     Vec->new(3, -4, 0),
     'Matrix::reflect_x on direction vector'
 );
 
 is_deeply(
-    Matrix::reflect_y($v),
+    Matrix::reflect_y() * $v,
     Vec->new(-3, 4, 0),
     'Matrix::reflect_y on direction vector'
 );
 
 # involution: reflect twice = identity
 is_deeply(
-    Matrix::reflect_x(Matrix::reflect_x($p)),
+    Matrix::reflect_x() * Matrix::reflect_x() * $p,
     $p,
     'double Matrix::reflect_x is identity'
 );
 
 is_deeply(
-    Matrix::reflect_y(Matrix::reflect_y($p)),
+    Matrix::reflect_y() * Matrix::reflect_y() * $p,
     $p,
     'double Matrix::reflect_y is identity'
 );
 
 # matrix multiplication
 is_deeply(
-    Matrix::rot_m(90) * Matrix::rot_m(90),
-    Matrix::rot_m(180)
+    Matrix::rot(90) * Matrix::rot(90),
+    Matrix::rot(180)
 );
 
 is_deeply(
-    Matrix::rot_m(90) * Matrix::rot_m(180),
-    Matrix::rot_m(270)
+    Matrix::rot(90) * Matrix::rot(180),
+    Matrix::rot(270)
 );
 
 is_deeply(
-    Matrix::rot_m(90) * Matrix::rot_m(270),
-    Matrix::rot_m(0)
+    Matrix::rot(90) * Matrix::rot(270),
+    Matrix::rot(0)
 );
 
 done_testing;

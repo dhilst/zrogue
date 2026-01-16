@@ -13,7 +13,7 @@ use Utils qw(aref);
 
 use overload
     '""' => \&to_str,
-    '*' => \&mul_mat,
+    '*' => \&mul_dispatch,
     ;
 
 sub new($cls, @rows) {
@@ -48,7 +48,16 @@ sub dim($self) {
     sprintf "%2d x %2d", $self->max_row, $self->max_col;
 }
 
-sub mul_vec($self, $vec) {
+sub mul_dispatch($self, $other, $swap = 0) {
+    return $self->mul_mat($other, $swap)
+        if ref($other) eq 'Matrix';
+    return $self->mul_vec($other, $swap)
+        if ref($other) eq 'Vec';
+
+    confess "Invalid other: $other";
+}
+
+sub mul_vec($self, $vec, $swap = 0) {
     confess "dimension mismatch $self x $vec"
         unless $self->max_col == $vec->dim;
     my @out;
@@ -62,6 +71,23 @@ sub mul_vec($self, $vec) {
         push @out, List::Util::sum(@sum);
     }
     Vec->new(@out);
+}
+
+sub mul_mat($self, $mat, $swap = 0) {
+    return $mat->mul_mat($self) if $swap;
+    confess "dim mismatch"
+        unless $self->max_col == $mat->max_row;
+    my @rows;
+    for my $i (0 .. $self->max_row - 1) {
+        my @row;
+        my $a_row = $self->row($i);
+        for my $j (0 .. $mat->max_col - 1) {
+            my $b_col = $mat->column($j);
+            push @row, $a_row->dot($b_col);
+        }
+        push @rows, \@row;
+    }
+    Matrix->new(@rows);
 }
 
 sub row($self, $row) {
@@ -80,23 +106,8 @@ sub column($self, $col) {
     Vec->new(@column);
 }
 
-sub mul_mat($self, $mat, $swap = 0) {
-    confess "dim mismatch"
-        unless $self->max_col == $mat->max_row;
-    my @rows;
-    for my $i (0 .. $self->max_row - 1) {
-        my @row;
-        my $a_row = $self->row($i);
-        for my $j (0 .. $mat->max_col - 1) {
-            my $b_col = $mat->column($j);
-            push @row, $a_row->dot($b_col);
-        }
-        push @rows, \@row;
-    }
-    Matrix->new(@rows);
-}
 
-sub translate_m($dx, $dy) {
+sub translate($dx, $dy) {
     my $m = Matrix::from_str(<<"EOF");
 1 0 $dx
 0 1 $dy
@@ -104,11 +115,7 @@ sub translate_m($dx, $dy) {
 EOF
 }
 
-sub translate($vec, $dx, $dy) {
-    Matrix::translate_m($dx, $dy)->mul_vec($vec);
-}
-
-sub rot_m($deg) {
+sub rot($deg) {
     confess "invalid deg $deg"
         unless $deg =~ /^(?:0|90|180|270)$/;
     state %ROTS = (
@@ -136,11 +143,7 @@ EOF
     $ROTS{$deg}
 }
 
-sub rot($vec, $deg) {
-    Matrix::rot_m($deg)->mul_vec($vec);
-}
-
-sub reflect_x_m() {
+sub reflect_x() {
     state $m = Matrix::from_str(<<'EOF');
  1  0  0
  0 -1  0
@@ -149,21 +152,13 @@ EOF
     $m;
 }
 
-sub reflect_x($vec) {
-    Matrix::reflect_x_m()->mul_vec($vec);
-}
-
-sub reflect_y_m() {
+sub reflect_y() {
     state $m = Matrix::from_str(<<'EOF');
 -1  0  0
  0  1  0
  0  0  1
 EOF
     $m;
-}
-
-sub reflect_y($vec) {
-    Matrix::reflect_y_m()->mul_vec($vec);
 }
 
 1;
