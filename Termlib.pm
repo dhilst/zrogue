@@ -24,11 +24,18 @@ sub clear($self) {
     print $self->term->Tputs("cl", 1);
 }
 
-sub write($self, $row, $col, $value) {
+# We ignore right extra arguments to allow calling
+# with homogeneous vectors as $term->write('x', $vec->@*);
+sub write($self, $value, $col, $row, @ignored) {
     print $self->term->Tputs("sc", 1);
     print $self->term->Tgoto("cm", $col, $row);
     print $value;
     print $self->term->Tputs("rc", 1);
+}
+
+sub write_vec($self, $value, $pos_vec) {
+    my ($col, $row) = $pos_vec->@*;
+    $self->write($value, $col, $row);
 }
 
 sub initscr($self, $default_value = ' ') {

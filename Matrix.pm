@@ -161,4 +161,16 @@ EOF
     $m;
 }
 
+sub map :prototype(&$) ($block, $self) {
+    my @rows;
+    for my $row ($self->@*) {
+        push @rows, [ map { $block->($_) } $row->@* ];
+    }
+    Matrix->new(@rows);
+}
+
+sub int($self) {
+    Matrix::map { int($_) } $self;
+}
+
 1;

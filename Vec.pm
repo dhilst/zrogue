@@ -90,13 +90,24 @@ sub dot($self, $other) {
     List::Util::zip($self, $other);
 }
 
+sub add_dim($self, $value) {
+    Vec->new($self->@*, $value);
+}
+
+sub drop_dim($self) {
+    my @values = $self->@*;
+    pop @values;
+    Vec->new(@values);
+}
+
 sub as_point($self) {
-    Vec->new($self->@*, 1);
+    $self->add_dim(1);
 }
 
 sub as_dir($self) {
-    Vec->new($self->@*, 0);
+    $self->add_dim(0);
 }
+
 
 sub dim($self) {
     scalar $self->@*;
