@@ -49,15 +49,18 @@ sub dim($self) {
 }
 
 sub mul_dispatch($self, $other, $swap = 0) {
-    return $self->mul_mat($other, $swap)
+    return $other * $self if $swap;
+    return $self->mul_scalar($other)
+        if looks_like_number($other);
+    return $self->mul_mat($other)
         if ref($other) eq 'Matrix';
-    return $self->mul_vec($other, $swap)
+    return $self->mul_vec($other)
         if ref($other) eq 'Vec';
 
     confess "Invalid other: $other";
 }
 
-sub mul_vec($self, $vec, $swap = 0) {
+sub mul_vec($self, $vec) {
     confess "dimension mismatch $self x $vec"
         unless $self->max_col == $vec->dim;
     my @out;
@@ -73,8 +76,7 @@ sub mul_vec($self, $vec, $swap = 0) {
     Vec->new(@out);
 }
 
-sub mul_mat($self, $mat, $swap = 0) {
-    return $mat->mul_mat($self) if $swap;
+sub mul_mat($self, $mat) {
     confess "dim mismatch"
         unless $self->max_col == $mat->max_row;
     my @rows;
@@ -171,6 +173,10 @@ sub map :prototype(&$) ($block, $self) {
 
 sub int($self) {
     Matrix::map { int($_) } $self;
+}
+
+sub mul_scalar($self, $scalar) {
+    Matrix::map { $_ * $scalar } $self;
 }
 
 1;

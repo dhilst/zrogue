@@ -4,13 +4,14 @@ use v5.36;
 use Carp;
 use List::Util;
 use Math::BigInt;
+use Scalar::Util qw(looks_like_number);
 use Exporter qw(import);
 
 use overload 
     '""' => \&to_str,
     '+'  => 'add',
     '-'  => 'sub',
-    '*'  => 'scale',
+    '*'  => 'mul',
     'neg'=> 'neg',
     fallback => 1;
 
@@ -52,9 +53,18 @@ sub sub($self, $other, $swap = 0) {
     $self, $other->neg;
 }
 
+sub mul($self, $other, $swap = 0) {
+    return $other * $self if $swap;
+    return $self->scale($other)
+        if looks_like_number($other);
+    return $other->mul_vec($self)
+        if ref($other) eq 'Matrix';
+    confess "invalid operation $self * $other";
+}
+
 sub scale($self, $scalar, $swap = 0) {
     confess "cannot commute vector mul"
-        unless $swap == 0;
+        unless $swap;
 
     Vec->new(map { $_ * $scalar } $self->@*);
 }
@@ -90,27 +100,12 @@ sub dot($self, $other) {
     List::Util::zip($self, $other);
 }
 
-sub add_dim($self, $value) {
-    Vec->new($self->@*, $value);
-}
-
-sub drop_dim($self) {
-    my @values = $self->@*;
-    pop @values;
-    Vec->new(@values);
-}
-
-sub as_point($self) {
-    $self->add_dim(1);
-}
-
-sub as_dir($self) {
-    $self->add_dim(0);
-}
-
-
 sub dim($self) {
     scalar $self->@*;
+}
+
+sub copy($self) {
+    Vec->new($self->@*);
 }
 
 1;

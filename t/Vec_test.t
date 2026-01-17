@@ -98,22 +98,6 @@ throws_ok {
     Vec->new(1,2)->dot(Vec->new(1))
 } qr/dimension mismatch/, 'dot dimension mismatch';
 
-# ----------------------------
-# homogeneous helpers
-# ----------------------------
-
-is_deeply(
-    Vec->new(1,2)->as_point,
-    Vec->new(1,2,1),
-    'as_point'
-);
-
-is_deeply(
-    Vec->new(1,2)->as_dir,
-    Vec->new(1,2,0),
-    'as_dir'
-);
-
 # swapped subtraction path (this exposes the bug)
 is_deeply(
     $a->sub($b, 1),

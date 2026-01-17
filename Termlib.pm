@@ -20,6 +20,7 @@ sub cols {
 }
 
 sub clear($self) {
+    local $| = 1;
     print $self->term->Tputs("ho", 1);
     print $self->term->Tputs("cl", 1);
 }
@@ -27,6 +28,7 @@ sub clear($self) {
 # We ignore right extra arguments to allow calling
 # with homogeneous vectors as $term->write('x', $vec->@*);
 sub write($self, $value, $col, $row, @ignored) {
+    local $| = 1;
     print $self->term->Tputs("sc", 1);
     print $self->term->Tgoto("cm", $col, $row);
     print $value;
@@ -39,6 +41,7 @@ sub write_vec($self, $value, $pos_vec) {
 }
 
 sub initscr($self, $default_value = ' ') {
+    local $| = 1;
     $self->clear;
     print join "\n", map { $default_value x ($self->cols - 1) } 0 .. $self->rows - 1;
 }
