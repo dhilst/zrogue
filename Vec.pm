@@ -54,8 +54,7 @@ sub sub($self, $other, $swap = 0) {
 }
 
 sub mul($self, $other, $swap = 0) {
-    return $other * $self if $swap;
-    return $self->scale($other)
+    return $self->scale($other, $swap)
         if looks_like_number($other);
     return $other->mul_vec($self)
         if ref($other) eq 'Matrix';
@@ -64,7 +63,7 @@ sub mul($self, $other, $swap = 0) {
 
 sub scale($self, $scalar, $swap = 0) {
     confess "cannot commute vector mul"
-        unless $swap;
+        if $swap;
 
     Vec->new(map { $_ * $scalar } $self->@*);
 }

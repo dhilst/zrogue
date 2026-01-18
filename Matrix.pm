@@ -6,6 +6,7 @@ use List::Util;
 use Data::Dumper;
 use Carp;
 use Data::Dumper;
+use Exporter qw(import);
 
 use lib ".";
 use Vec;
@@ -15,6 +16,8 @@ use overload
     '""' => \&to_str,
     '*' => \&mul_dispatch,
     ;
+
+our @EXPORT_OK = qw($NORTH $SOUTH $WEST $EAST);
 
 sub new($cls, @rows) {
     bless [ map { Vec->new($_->@*) } @rows ], $cls;
@@ -36,16 +39,16 @@ sub to_str($self, @ignored) {
     join "\n", map { format_row($_->@*) } $self->@*;
 }
 
-sub max_row($self) {
+sub rows($self) {
     scalar $self->@*;
 }
 
-sub max_col($self) {
+sub cols($self) {
     scalar $self->[0]->@*;
 }
 
 sub dim($self) {
-    sprintf "%2d x %2d", $self->max_row, $self->max_col;
+    sprintf "%2d x %2d", $self->rows, $self->cols;
 }
 
 sub mul_dispatch($self, $other, $swap = 0) {
@@ -62,7 +65,7 @@ sub mul_dispatch($self, $other, $swap = 0) {
 
 sub mul_vec($self, $vec) {
     confess "dimension mismatch $self x $vec"
-        unless $self->max_col == $vec->dim;
+        unless $self->cols == $vec->dim;
     my @out;
     for my $row ($self->@*) {
         my @sum;
@@ -78,12 +81,12 @@ sub mul_vec($self, $vec) {
 
 sub mul_mat($self, $mat) {
     confess "dim mismatch"
-        unless $self->max_col == $mat->max_row;
+        unless $self->cols == $mat->rows;
     my @rows;
-    for my $i (0 .. $self->max_row - 1) {
+    for my $i (0 .. $self->rows - 1) {
         my @row;
         my $a_row = $self->row($i);
-        for my $j (0 .. $mat->max_col - 1) {
+        for my $j (0 .. $mat->cols - 1) {
             my $b_col = $mat->column($j);
             push @row, $a_row->dot($b_col);
         }
@@ -94,13 +97,13 @@ sub mul_mat($self, $mat) {
 
 sub row($self, $row) {
     confess "invalid row $row"
-        unless 0 <= $row && $row < $self->max_row;
+        unless 0 <= $row && $row < $self->rows;
     $self->[$row];
 }
 
 sub column($self, $col) {
     confess "invalid col $col"
-        unless 0 <= $col && $col < $self->max_col;
+        unless 0 <= $col && $col < $self->cols;
     my @column;
     for ($self->@*) {
         push @column, $_->[$col];
@@ -110,11 +113,16 @@ sub column($self, $col) {
 
 
 sub translate($dx, $dy) {
-    my $m = Matrix::from_str(<<"EOF");
+    Matrix::from_str(<<"EOF");
 1 0 $dx
 0 1 $dy
 0 0 1
 EOF
+}
+
+sub translate_vec($vec) {
+    my ($dx, $dy) = $vec->@*;
+    translate($dx, $dy);
 }
 
 sub rot($deg) {
@@ -178,5 +186,10 @@ sub int($self) {
 sub mul_scalar($self, $scalar) {
     Matrix::map { $_ * $scalar } $self;
 }
+
+our $NORTH = Matrix::translate(0, 1);
+our $SOUTH = Matrix::translate(0, -1);
+our $WEST  = Matrix::translate(-1, 0);
+our $EAST  = Matrix::translate(1, 0);
 
 1;

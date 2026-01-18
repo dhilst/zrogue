@@ -17,8 +17,8 @@ EOF
 
 is("$m", "| 1  2|\n| 3  4|", 'matrix stringification');
 
-is($m->max_row, 2, 'row count');
-is($m->max_col, 2, 'column count');
+is($m->rows, 2, 'row count');
+is($m->cols, 2, 'column count');
 
 is_deeply($m->column(0), Vec->new(1, 3), "column 0 works");
 is_deeply($m->column(1), Vec->new(2, 4), "column 1 works");

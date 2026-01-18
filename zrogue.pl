@@ -15,6 +15,7 @@ use lib "$Bin";
 use Vec;
 use Matrix;
 use Termlib;
+use Geometry;
 use Utils qw(aref);
 
 my $term = Termlib->new();
@@ -33,37 +34,6 @@ my $screen_space =
 
 # projective coordinate for screen center
 my $origin = Vec->new(0, 0, 1);
-
-my $north = Matrix::translate(0, 1);
-my $south = Matrix::translate(0, -1);
-my $west = Matrix::translate(-1, 0);
-my $east = Matrix::translate(1, 0);
-
-$term->write_vec('O', $screen_space * $origin);
-$term->write_vec('n', $screen_space * $north * $origin);
-$term->write_vec('s', $screen_space * $south * $origin);
-$term->write_vec('e', $screen_space * $east  * $origin);
-$term->write_vec('w', $screen_space * $west  * $origin);
-
-sub parse($data) { 
-    [
-        map { [ split //, $_] }
-        split /\n/, $data
-    ];
-}
-
-sub render($pos_vec, $array, $term) {
-    my $pos = $pos_vec->copy;
-    my ($start_col) = $pos->@*;
-    my $width = scalar $array->[0]->@*;
-    for my $row ($array->@*) {
-        for my $value ($row->@*) {
-            $term->write_vec($value, $screen_space * $pos);
-            $pos *= $east;
-        }
-        $pos *= Matrix::translate(-$width, -1);
-    }
-}
 
 # @TODO
 #  Define Space, Viewport, Geometry
@@ -111,26 +81,54 @@ sub render($pos_vec, $array, $term) {
 # 9   |         | -4
 # 1   ----------- -5
 #    -54321012345
-#    
 
-my $square = <<'EOF';
-xxxx
-x  x
-xxxx
+sub render_geometry($at_vec, $geo, $term) {
+    my $translate = Matrix::translate_vec($at_vec);
+    for my $point ($geo->@*) {
+        my ($pos_vec, $value) = $point->@*;
+        $term->write_vec($value, $screen_space * $translate * $pos_vec);
+    }
+}
+
+my $circle = Geometry::from_str(<<'EOF', -centerfy => 1);
+..xxxxxxxxx..
+.x.........x.
+x...........x
+x...........x
+x...........x
+x...........x
+x...........x
+.x.........x.
+..xxxxxxxxx..
 EOF
 
-my $triangle = <<'EOF';
+my $square = Geometry::from_str(<<'EOF', -centerfy => 1);
+xxxxxxxxx
+x.......x
+x.......x
+x.......x
+xxxxxxxxx
+EOF
+
+my $triangle = Geometry::from_str(<<'EOF', -centerfy => 1);
 ..x..
 .x x.
 xxxxx
 EOF
 
-my $circle = <<'EOF';
-.xxx.
-x   x
-.xxx.
+my $arrow = Geometry::from_str(<<'EOF', -centerfy => 1);
+.......
+==>.<==
+.......
 EOF
 
-render(Vec->new(10, 10, 1), parse($square), $term);
-render(Vec->new(10, 15, 1), parse($triangle), $term);
-render(Vec->new(10, 20, 1), parse($circle), $term);
+$term->write_vec('O', $screen_space * Vec->new(0, 0, 1));
+render_geometry(Vec->new(-10, 10, 1), $triangle, $term);
+render_geometry(Vec->new(-10, 10, 1), $square, $term);
+render_geometry(Vec->new(-10, 10, 1), $circle, $term);
+# render_geometry(Vec->new(0, 0, 1), $triangle, $term);
+# render_geometry(Vec->new(10, 20, 1), $triangle, $term);
+# render_geometry(Vec->new(10, 20, 1), $triangle, $term);
+
+# $term->write_vec('@', $screen_space * Vec->new(-20, 11, 1));
+# render_geometry(Vec->new(-20, 11, 1), $arrow, $term);
