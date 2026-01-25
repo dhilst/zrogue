@@ -1,12 +1,13 @@
-package Geometry;
+package Geometry3;
 
 use v5.36;
 use utf8;
 use Carp;
+use List::Util;
 
 use lib ".";
 use Utils qw(getters);
-use Matrix qw($EAST);
+use Matrix3 qw($EAST);
 
 use overload
     '""' => \&to_str,
@@ -39,15 +40,16 @@ sub from_array(@array) {
 sub from_str($str, %opts) {
     my @geometry;
     my $array = _parse($str);
-    my $pos = Vec->new(0, 0, 1);
+    my $pos = Matrix3::Vec::from_xy(0, 0);
     my $width = scalar $array->[0]->@*;
+    my $T = Matrix3::translate(-$width, -1);
     for my $row ($array->@*) {
         for my $col ($row->@*) {
-            push @geometry, [$pos, $col]
+            push @geometry, [$pos->copy, $col]
                    if $col ne ".";
-            $pos *= $EAST;
+            $pos->mul_mat_inplace($EAST);
         }
-        $pos *= Matrix::translate(-$width, -1);
+        $pos->mul_mat_inplace($T);
     }
     my $self = bless {
         data => \@geometry
@@ -58,7 +60,7 @@ sub from_str($str, %opts) {
 }
 
 sub copy($self) {
-    Geometry::from_array($self->@*);
+    Geometry3::from_array($self->@*);
 }
 
 sub max_row($self) {
@@ -88,17 +90,20 @@ sub cols($self) { $self->max_col + 1; }
 
 sub center($self) {
     use integer;
-    Vec->new($self->cols/2, -$self->rows/2, 1);
+    Matrix3::Vec::from_xy($self->cols/2, -$self->rows/2);
 }
 
 sub mul_inplace($self, $matrix) {
     for ($self->@*) {
-        $_->[0] *= $matrix;
+        $_->[0]->mul_mat_inplace($matrix);
     }
 }
 
 sub centerfy_inplace($self) {
-    $self->mul_inplace(Matrix::translate_vec(-$self->center));
+    use Data::Dumper;
+    my $center = $self->center;
+    $center->mul_scalar_inplace(-1);
+    $self->mul_inplace(Matrix3::translate($center->@*));
 }
 
 1;
@@ -119,7 +124,7 @@ from_str constructor;
 
 This constructor expect a string like this:
 
-    my $triangle = Geometry::from_str(<<'EOF', -centerfy => 1);
+    my $triangle = Geometry3::from_str(<<'EOF', -centerfy => 1);
     ..x..
     .x x.
     xxxxx

@@ -1,5 +1,9 @@
 package Termlib;
+
 use v5.36;
+use utf8;
+use open ':std', ':encoding(UTF-8)';
+
 use lib ".";
 use Utils qw(getters);
 
