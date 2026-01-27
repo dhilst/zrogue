@@ -29,6 +29,8 @@ $term->initscr('.');
 my $COLS = $term->cols;
 my $ROWS = $term->rows;
 
+sub v($x,$y) { Matrix3::Vec::from_xy($x, $y) }
+
 # Set origin to screen center
 my $terminal_space = 
         Matrix3::translate(($COLS - 1)/2, $ROWS/2)
@@ -49,17 +51,10 @@ sub render_geometry($at_vec, $geo, $term) {
 }
 
 sub render_text($at_vec, $text, $term) {
+    my $coord = $at_vec * $terminal_space;
+
     $term->write_vec($text, $at_vec * $terminal_space);
 }
 
-my $hello = Geometry3::from_str(<<'EOF', -centerfy => 1);
-,------------------,
-|                  |
-|     $GREETINGS   |
-|                  |
-'------------------'
-EOF
-
-render_geometry($origin, $hello, $term);
-render_text($hello->points->{'$GREETINGS'}, "hello", $term);
-
+render_text(v(0, 0), "0", $term);
+render_text(v(0, 1), "1", $term);
