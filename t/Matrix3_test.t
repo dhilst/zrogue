@@ -3,7 +3,6 @@ use Test::More;
 use Test::Exception;
 
 use lib '.';
-use Vec;
 use Matrix3;
 
 my $vec = Matrix3::Vec::from_xy(1, 0);
@@ -14,15 +13,15 @@ is_deeply($cpy, $vec);
 
 $cpy = $vec->copy;
 $cpy *= $Matrix3::ROT90;
-is_deeply($cpy, [0, 1]);
+is_deeply($cpy, Matrix3::Vec::from_xy(0, 1));
 
 $cpy = $vec->copy;
 $cpy *= $Matrix3::ROT180;
-is_deeply($cpy, [-1, 0]);
+is_deeply($cpy, Matrix3::Vec::from_xy(-1, 0));
  
 $cpy = $vec->copy;
 $cpy *= $Matrix3::ROT270;
-is_deeply($cpy, [0, -1]);
+is_deeply($cpy, Matrix3::Vec::from_xy(0, -1));
 
 $cpy = $vec->copy;
 

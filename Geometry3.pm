@@ -14,7 +14,7 @@ use overload
     '@{}' => \&to_array,
     ;
 
-getters qw(data);
+getters qw(data points);
 
 sub to_str ($self, $other, $swap = 0) {
     sprintf "Geometry(%d x %d)", $self->rows, $self->cols;
@@ -33,26 +33,58 @@ sub _parse($data) {
 
 sub from_array(@array) {
     bless {
-        data => \@array
+        data => \@array,
+        points => [],
     }, __PACKAGE__;
 }
 
 sub from_str($str, %opts) {
+    use integer;
+
     my @geometry;
     my $array = _parse($str);
     my $pos = Matrix3::Vec::from_xy(0, 0);
     my $width = scalar $array->[0]->@*;
     my $T = Matrix3::translate(-$width, -1);
+    my %points;
+    my $label_text = undef;
+    my $label_pos = undef;
     for my $row ($array->@*) {
-        for my $col ($row->@*) {
-            push @geometry, [$pos->copy, $col]
-                   if $col ne ".";
-            $pos->mul_mat_inplace($EAST);
+        for my $col_idx (0 .. $row->$#*) {
+            my $col = $row->[$col_idx];
+            # . is the alpha char (transparency)
+            
+            if ($col eq ".") {
+                $pos *= $EAST;
+                next;
+            }
+
+            my $poscpy = $pos->copy;
+            if ($col =~ /[\$@]/) {
+                $label_text = "$col";
+                $label_pos = $poscpy;
+                $pos *= $EAST;
+                next;
+            }
+
+            if ($col =~ /[A-Z]/) {
+                $label_text .= $col;
+                $pos *= $EAST;
+                next;
+            } elsif (defined($label_text)) {
+                $points{$label_text} = $label_pos;
+                $label_text = undef;
+                $label_pos = undef;
+            }
+
+            push @geometry, [$poscpy, $col];
+            $pos *= $EAST;
         }
-        $pos->mul_mat_inplace($T);
+        $pos *= $T;
     }
     my $self = bless {
-        data => \@geometry
+        data => \@geometry,
+        points => \%points,
     }, __PACKAGE__;
     $self->centerfy_inplace
         if $opts{-centerfy};
@@ -95,12 +127,15 @@ sub center($self) {
 
 sub mul_inplace($self, $matrix) {
     for ($self->@*) {
-        $_->[0]->mul_mat_inplace($matrix);
+        $_->[0] *= $matrix;
+    }
+
+    for (values $self->{points}->%*) {
+        $_ *= $matrix;
     }
 }
 
 sub centerfy_inplace($self) {
-    use Data::Dumper;
     my $center = $self->center;
     $center->mul_scalar_inplace(-1);
     $self->mul_inplace(Matrix3::translate($center->@*));

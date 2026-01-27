@@ -2,9 +2,13 @@ use v5.36;
 use utf8;
 
 package Matrix3::Vec {
+    use integer;
     use overload
         '""' => \&to_str,
-        'eq' => \&eq
+        'eq' => \&eq,
+        '*' => \&mul_mat,
+        '*=' => \&mul_mat_inplace,
+        fallback => 1,
         ;
 
     sub to_str($self, $other = undef, $swap = undef) {
@@ -13,6 +17,10 @@ package Matrix3::Vec {
 
     sub from_xy($x, $y) {
         bless [$x, $y], __PACKAGE__;
+    }
+
+    sub mul_mat($self, $matrix, $swap = undef) {
+        $self->copy->mul_mat_inplace($matrix);
     }
 
     sub mul_mat_inplace($self, $matrix, $swap = undef) {
@@ -44,7 +52,7 @@ package Matrix3;
 use v5.36;
 use utf8;
 use Exporter qw(import);
-
+use Carp;
 
 use lib ".";
 use Utils qw(getters);
@@ -68,6 +76,7 @@ getters qw(data);
 use overload
     '@{}' => \&data,
     '*=' => \&mul_mat_inplace,
+    '*' => \&mul_mat,
     ;
 
 # Constructs the Matrix
@@ -103,6 +112,7 @@ sub eq($self, $other, $swap = undef) {
 }
 
 sub mul_mat_inplace ($self, $other, $swap = 0) {
+    confess "null other " unless defined $other;
     my ($a1,$b1,$c1,$d1,$dx1,$dy1) = @{ $self->{data} };
     my ($a2,$b2,$c2,$d2,$dx2,$dy2) = @{ $other->{data} };
 
@@ -116,6 +126,10 @@ sub mul_mat_inplace ($self, $other, $swap = 0) {
     );
 
     return $self;
+}
+
+sub mul_mat($self, $other, $swap = 0) {
+    $self->copy->mul_mat_inplace($other);
 }
 
 
