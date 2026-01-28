@@ -8,13 +8,14 @@ use List::Util;
 use lib ".";
 use Utils qw(getters);
 use Matrix3 qw($EAST);
+use Viewport;
 
 use overload
     '""' => \&to_str,
     '@{}' => \&to_array,
     ;
 
-getters qw(data points);
+getters qw(data points regions);
 
 sub to_str ($self, $other, $swap = 0) {
     sprintf "Geometry(%d x %d)", $self->rows, $self->cols;
@@ -41,12 +42,17 @@ sub from_array(@array) {
 sub from_str($str, %opts) {
     use integer;
 
+    $opts{-centerfy} //= 0;
+    $opts{-bg} //= ' ';
+
+    my $bg = $opts{-bg};
     my @geometry;
     my $array = _parse($str);
     my $pos = Matrix3::Vec::from_xy(0, 0);
     my $width = scalar $array->[0]->@*;
     my $T = Matrix3::translate(-$width, -1);
     my %points;
+    my %regions;
     my $label_text = undef;
     my $label_pos = undef;
     for my $row ($array->@*) {
@@ -59,25 +65,48 @@ sub from_str($str, %opts) {
                 next;
             }
 
-            my $poscpy = $pos->copy;
             if ($col =~ /[\$@]/) {
-                $label_text = "$col";
-                $label_pos = $poscpy;
+                # we hit a @ or $
+                $label_text = $col;
+                $label_pos = $pos->copy;
+                push @geometry, [$pos->copy, $bg];
                 $pos *= $EAST;
                 next;
             }
 
-            if ($col =~ /[A-Z]/) {
+            if ($col =~ /[A-Z]/ && defined $label_text) {
+                # building the label text
                 $label_text .= $col;
+                push @geometry, [$pos->copy, $bg];
                 $pos *= $EAST;
                 next;
-            } elsif (defined($label_text)) {
-                $points{$label_text} = $label_pos;
+            } elsif (defined $label_text) {
+                # finished parsing the label text
+                my $key = substr $label_text, 1;
+                if ($label_text =~ /^@/) {
+                    # we just parsed a region label (@)
+                    if (exists $regions{$key}) {
+                        # and it is the closing @ tag
+                        my $label_pos = $regions{$key};
+                        my $h = abs($label_pos->y - $pos->y) + 1;
+                        my $w = abs($label_pos->x - $pos->x);
+                        $regions{$key} = Viewport::from_pos_hw($label_pos, $h, $w);
+                    } else {
+                        # it is the opening @ tag
+                        $regions{$key} = $label_pos;
+                    }
+                } else {
+                    # we just parsed a point ($)
+                    $points{$key} = $label_pos;
+                }
+
                 $label_text = undef;
                 $label_pos = undef;
             }
 
-            push @geometry, [$poscpy, $col];
+            $label_text = undef;
+            $label_pos = undef;
+            push @geometry, [$pos->copy, $col];
             $pos *= $EAST;
         }
         $pos *= $T;
@@ -85,6 +114,7 @@ sub from_str($str, %opts) {
     my $self = bless {
         data => \@geometry,
         points => \%points,
+        regions => \%regions,
     }, __PACKAGE__;
     $self->centerfy_inplace
         if $opts{-centerfy};
@@ -132,6 +162,10 @@ sub mul_inplace($self, $matrix) {
 
     for (values $self->{points}->%*) {
         $_ *= $matrix;
+    }
+
+    for (values $self->{regions}->%*) {
+        $_->move($matrix);
     }
 }
 

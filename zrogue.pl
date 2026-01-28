@@ -14,7 +14,6 @@ use Benchmark qw(:all);
 use lib "$Bin/vendor/lib/perl5";
 use lib "$Bin";
 
-use Vec;
 use Termlib;
 use Matrix3 qw($REFLECT_X);
 use Geometry3;
@@ -50,11 +49,34 @@ sub render_geometry($at_vec, $geo, $term) {
     }
 }
 
-sub render_text($at_vec, $text, $term) {
-    my $coord = $at_vec * $terminal_space;
+sub render_text($at_vec, $text, $term, %opts) {
+    use integer;
+    $opts{-justify} //= 'left';
+    if ($opts{-justify} eq 'center') {
+        my $T = Matrix3::translate(- length($text) / 2, 0);
+        $term->write_vec($text, $at_vec * $T * $terminal_space);
+        return;
+    } elsif ($opts{-justify} eq 'right') {
+        my $T = Matrix3::translate(- length($text), 0);
+        $term->write_vec($text, $at_vec * $T * $terminal_space);
+        return;
+    }
+
 
     $term->write_vec($text, $at_vec * $terminal_space);
 }
 
-render_text(v(0, 0), "0", $term);
-render_text(v(0, 1), "1", $term);
+
+my $inventory = Geometry3::from_str($Views::INVENTORY, -centerfy => 1);
+render_geometry($origin, $inventory, $term);
+render_text($inventory->points->{NAME}, "LEON ", $term);
+render_text($inventory->points->{FILE}, "> FILE", $term);
+render_text($inventory->points->{MAP}, "> MAP", $term);
+render_text($inventory->points->{ITEM}, "> ITEM", $term);
+render_text($inventory->points->{EXIT}, "> EXIT", $term);
+render_text($inventory->points->{HAND}, "> 9mm Pistol", $term, -justify => 'center');
+render_text($inventory->points->{PKT}, "> Lighter", $term, -justify => 'center');
+render_text($inventory->regions->{HEALTH}->bottomright, "Fine", $term, -justify => 'right');
+render_text($inventory->regions->{STATUS}->center, "Some item image here", $term, -justify => 'center');
+render_text($inventory->regions->{TEXT}->center, "Some item text description here", $term, -justify => 'center');
+render_text($inventory->regions->{INVENTORY}->topleft, "List of items in invetory", $term,);

@@ -46,6 +46,9 @@ package Matrix3::Vec {
     sub copy($self) {
         Matrix3::Vec::from_xy($self->@*);
     }
+
+    sub x($self) { $self->[0] }
+    sub y($self) { $self->[1] }
 }
 
 package Matrix3;
@@ -113,6 +116,7 @@ sub eq($self, $other, $swap = undef) {
 
 sub mul_mat_inplace ($self, $other, $swap = 0) {
     confess "null other " unless defined $other;
+    confess "invalid other" unless ref($other) eq __PACKAGE__;
     my ($a1,$b1,$c1,$d1,$dx1,$dy1) = @{ $self->{data} };
     my ($a2,$b2,$c2,$d2,$dx2,$dy2) = @{ $other->{data} };
 
