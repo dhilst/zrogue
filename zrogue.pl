@@ -19,12 +19,12 @@ use Matrix3 qw($REFLECT_X);
 use Geometry3;
 use Views;
 use Viewport;
+use Input;
 use Utils qw(aref);
 
 my $term = Termlib->new();
 
-$term->initscr('.');
-
+ 
 my $COLS = $term->cols;
 my $ROWS = $term->rows;
 
@@ -66,17 +66,28 @@ sub render_text($at_vec, $text, $term, %opts) {
     $term->write_vec($text, $at_vec * $terminal_space);
 }
 
+my $inp = Input::new();
+while (1) {
+    my @events = $inp->poll(1);
+    last unless @events;
+    say join " | ", @events;
+}
 
-my $inventory = Geometry3::from_str($Views::INVENTORY, -centerfy => 1);
-render_geometry($origin, $inventory, $term);
-render_text($inventory->points->{NAME}, "LEON ", $term);
-render_text($inventory->points->{FILE}, "> FILE", $term);
-render_text($inventory->points->{MAP}, "> MAP", $term);
-render_text($inventory->points->{ITEM}, "> ITEM", $term);
-render_text($inventory->points->{EXIT}, "> EXIT", $term);
-render_text($inventory->points->{HAND}, "> 9mm Pistol", $term, -justify => 'center');
-render_text($inventory->points->{PKT}, "> Lighter", $term, -justify => 'center');
-render_text($inventory->regions->{HEALTH}->bottomright, "Fine", $term, -justify => 'right');
-render_text($inventory->regions->{STATUS}->center, "Some item image here", $term, -justify => 'center');
-render_text($inventory->regions->{TEXT}->center, "Some item text description here", $term, -justify => 'center');
-render_text($inventory->regions->{INVENTORY}->topleft, "List of items in invetory", $term,);
+
+
+# $term->initscr('.');
+# $term->initscr(' ');
+# $term->initscr('█');
+# my $inventory = Geometry3::from_str($Views::INVENTORY, -centerfy => 1);
+# render_geometry($origin, $inventory, $term);
+# render_text($inventory->points->{NAME}, "LEON ", $term);
+# render_text($inventory->points->{FILE}, "> FILE", $term);
+# render_text($inventory->points->{MAP}, "> MAP", $term);
+# render_text($inventory->points->{ITEM}, "> ITEM", $term);
+# render_text($inventory->points->{EXIT}, "> EXIT", $term);
+# render_text($inventory->points->{HAND}, "> 9mm Pistol", $term, -justify => 'center');
+# render_text($inventory->points->{PKT}, "> Lighter", $term, -justify => 'center');
+# render_text($inventory->regions->{HEALTH}->bottomright, "Fine", $term, -justify => 'right');
+# render_text($inventory->regions->{STATUS}->center, "Some item image here", $term, -justify => 'center');
+# render_text($inventory->regions->{TEXT}->center, "Some item text description here", $term, -justify => 'center');
+# render_text($inventory->regions->{INVENTORY}->topleft, "List of items in invetory", $term,);
