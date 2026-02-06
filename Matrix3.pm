@@ -8,6 +8,8 @@ package Matrix3::Vec {
         'eq' => \&eq,
         '*' => \&mul_mat,
         '*=' => \&mul_mat_inplace,
+        '+' => \&add_vec,
+        '+=' => \&add_vec_inplace,
         fallback => 1,
         ;
 
@@ -17,6 +19,16 @@ package Matrix3::Vec {
 
     sub from_xy($x, $y) {
         bless [$x, $y], __PACKAGE__;
+    }
+
+    sub add_vec_inplace($self, $vec, $swap = undef) {
+        $self->[0] += $vec->[0];
+        $self->[1] += $vec->[1];
+        $self;
+    }
+
+    sub add_vec($self, $vec, $swap = undef) {
+        $self->copy->add_vec_inplace($vec, $swap);
     }
 
     sub mul_mat($self, $matrix, $swap = undef) {

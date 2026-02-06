@@ -2,6 +2,7 @@ package Utils;
 use v5.36;
 
 use Exporter qw(import);
+use List::Util;
 
 our @EXPORT_OK = qw(
     aref
@@ -19,5 +20,12 @@ sub getters(@fields) {
         }
     }
 }
+
+package Utils::Array {
+    sub index_of($element, @array) {
+        (List::Util::first { $array[$_] eq $element } 0 .. $#array) // -1;
+    }
+}
+
 
 1;
