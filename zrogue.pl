@@ -52,8 +52,8 @@ sub erase_geometry($at_vec, $geo, $char, $term) {
     use integer;
     my $coord_mapper = $terminal_space * Matrix3::translate($at_vec->@*);
     for my $point ($geo->@*) {
-        my ($pos_vec) = $point->@*;
-        $term->write_vec($char, $pos_vec * $coord_mapper);
+        my ($pos_vec, $value) = $point->@*;
+        $term->write_vec($char x length($value), $pos_vec * $coord_mapper);
     }
 }
 
@@ -89,12 +89,13 @@ my $square = Geometry3::from_str(<<'EOF', -centerfy => 1);
 '----------------------'
 EOF
 
+say Dumper $square;
 
 my $BLANK = '.';
 $term->initscr($BLANK);
 my $pos = Matrix3::Vec::from_xy(0, 0);
 render_geometry($pos, $square, $term);
-# # render_text($pos, '@', $term);
+# # # render_text($pos, '@', $term);
 while (1) {
     my @events = $inp->poll(1);
     last unless @events;

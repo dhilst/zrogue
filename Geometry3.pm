@@ -7,7 +7,7 @@ use List::Util;
 
 use lib ".";
 use Utils qw(getters);
-use Matrix3 qw($EAST);
+use Matrix3 qw($EAST $WEST);
 use Viewport;
 
 use overload
@@ -106,6 +106,19 @@ sub from_str($str, %opts) {
 
             $label_text = undef;
             $label_pos = undef;
+            
+            if (@geometry) {
+                # If points are adjacent, concatenate them instead of pushing a new
+                # point. This helps to keep geometry smaller.
+                my ($lastpos, $lastvalue) = $geometry[$#geometry]->@*;
+                my $newpos = $pos * Matrix3::translate(-length($lastvalue), 0);
+                if ($lastpos eq $newpos) {
+                    $geometry[$#geometry]->[1] .= $col;
+                    $pos *= $EAST;
+                    next;
+                }
+            }
+
             push @geometry, [$pos->copy, $col];
             $pos *= $EAST;
         }
@@ -186,8 +199,12 @@ Geometry
 =head1 SYNOPSIS
 
 Geometry is defined as a set of pairs (coordinate, values) which
-represent objects that can be rendered in an 2d grid space. Origin
-is set to top left corner with Y increasing UP by default. To
+represent objects that can be rendered in an 2d grid space. Horizontally
+adjacent points are concatenated into strings to save terminal I/O later.
+This way instead of printing a string character by character, the renderer
+can move to the write position and write the whole string at once.
+
+Origin is set to top left corner with Y increasing UP by default. To
 have origin at the center of the object use '-centerfy => 1' in
 from_str constructor;
 
