@@ -12,7 +12,7 @@ getters qw(term);
 sub new($cls) {
     bless {
         term => Term::Cap->Tgetent(),
-    }, $cls
+    }, $cls;
 }
 
 sub rows {

@@ -8,6 +8,7 @@ use Time::HiRes qw(sleep);
 use List::Util;
 use Data::Dumper;
 use Math::BigInt qw(bgcd);
+use Time::HiRes;
 use Benchmark qw(:all);
 
 use FindBin qw($Bin);
@@ -20,63 +21,7 @@ use Views;
 use Viewport;
 use Input;
 use Utils qw(aref);
-
-my $term = Termlib->new();
-
- 
-my $COLS = $term->cols;
-my $ROWS = $term->rows;
-
-sub v($x,$y) { Matrix3::Vec::from_xy($x, $y) }
-
-# Set origin to screen center
-my $terminal_space = 
-        Matrix3::translate(($COLS - 1)/2, $ROWS/2)
-            ->mul_mat_inplace($REFLECT_X);
-
-my $origin = Matrix3::Vec::from_xy(0, 0);
-my $terminal_origin =
-    $origin->copy->mul_mat_inplace($terminal_space);
-
-sub render_geometry($at_vec, $geo, $term) {
-    use integer;
-    my $coord_mapper = $terminal_space * Matrix3::translate($at_vec->@*);
-    for my $point ($geo->@*) {
-        my ($pos_vec, $value) = $point->@*;
-        $term->write_vec($value, $pos_vec * $coord_mapper);
-    }
-}
-
-sub erase_geometry($at_vec, $geo, $char, $term) {
-    use integer;
-    my $coord_mapper = $terminal_space * Matrix3::translate($at_vec->@*);
-    for my $point ($geo->@*) {
-        my ($pos_vec, $value) = $point->@*;
-        $term->write_vec($char x length($value), $pos_vec * $coord_mapper);
-    }
-}
-
-sub render_text($at_vec, $text, $term, %opts) {
-    use integer;
-    $opts{-justify} //= 'left';
-    if ($opts{-justify} eq 'center') {
-        my $T = Matrix3::translate(- length($text) / 2, 0);
-        my $p = $at_vec->copy;
-        $p *= $T *= $terminal_space;
-        $term->write_vec($text, $p);
-        return;
-    } elsif ($opts{-justify} eq 'right') {
-        my $T = Matrix3::translate(- length($text), 0);
-        my $p = $at_vec->copy;
-        $p *= $T *= $terminal_space;
-        $term->write_vec($text, $p);
-        return;
-    }
-
-    $term->write_vec($text, $at_vec * $terminal_space);
-}
-
-my $inp = Input::new();
+use Renderers;
 
 package Menu {
     no autovivification;
@@ -89,16 +34,18 @@ package Menu {
     use Utils qw(getters);
 
     my $VIEW = <<'EOF';
-,-------------------------------,
-| Menu                        $T|
-|-------------------------------|
-| $H MENU1                      |
-| $M MENU2                      |
-| $D MENU3                      |
-|-------------------------------|
-| Status: $R                    |
-'-------------------------------'
+,------------------------------------------,
+| Menu                                   $T|
+|------------------------------------------|
+|$H MENU1        $P                        |
+|$M MENU2        $L                        |
+|$D MENU3                                  |
+|------------------------------------------|
+| Status: $R                               |
+'------------------------------------------'
 EOF
+
+#|-------------------------------|
     my @CYCLES = qw(H M D);
     my %NAMES = (
         H => 'MENU1',
@@ -106,23 +53,33 @@ EOF
         D => 'MENU3',
     );
 
-    getters qw(focus pos lastpos geo);
+    getters qw(focus pos lastpos geo renderer z);
 
-    sub from_xy(
-        $x, $y,
+    sub from_xyz(
+        $x, $y, $z,
+        $renderer
+    ) {
+        Menu::from_pos(Matrix3::Vec::from_xy($x, $y), $z, $renderer);
+    }
+
+    sub from_pos(
+        $pos,
+        $z,
+        $renderer
     ) {
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
-        my $pos = Matrix3::Vec::from_xy($x, $y);
         bless {
             focus => undef,
             status => undef,
             geo => $geo,
             pos => $pos,
-            lastpos => undef,
+            lastpos => $pos->copy,
+            renderer => $renderer,
+            z => $z,
         }, __PACKAGE__;
     }
 
-    sub update($self, @events) {
+    sub update($self, $dt, @events) {
         my $idx = Utils::Array::index_of($self->{focus} // 'D', @CYCLES);
         for my $event (@events) {
             my $char = $event->payload->char;
@@ -138,54 +95,162 @@ EOF
                 $self->{pos} *= $WEST;
             } elsif ($char eq 'L') {
                 $self->{pos} *= $EAST;
-            } elsif ($event->payload->code eq 0x0a && exists $self->{focus}) {
+            } elsif ($event->payload->code eq 0x0a && defined $self->focus) {
                 $self->{status} = sprintf "%s selected", $NAMES{$self->{focus}};
             }
         }
 
     }
 
-    sub render($self, $dt, $term) {
+    sub render($self) {
         # ▶ ▷
-        if (!defined $self->lastpos) {
-            ::render_geometry($self->pos, $self->geo, $term);
-            $self->{lastpos} = $self->{pos}->copy;
-        } elsif ($self->lastpos ne $self->pos) {
-            ::erase_geometry($self->lastpos, $self->geo, '.', $term);
-            ::render_geometry($self->pos, $self->geo, $term);
-            $self->{lastpos} = $self->{pos}->copy;
+        my $lastpos = $self->lastpos->copy;
+        if ($self->lastpos ne $self->pos) {
+            $self->renderer->erase_geometry($self->lastpos, $self->geo, '.');
+            $self->{lastpos} = $self->pos->copy;
         }
+        $self->renderer->render_geometry($self->pos, $self->geo);
+        $self->renderer->render_fmt($self->pos + $self->geo->points->{P}, "pos:     %s", $self->pos);
+        $self->renderer->render_fmt($self->pos + $self->geo->points->{L}, "lastpos: %s", $lastpos);
 
         if ($self->focus) {
-            ::render_text($self->pos + $self->geo->points->{$self->focus}, ' ▶', $term);
-            ::render_text($self->pos + $self->geo->points->{$_}, ' ▷', $term)
+            $self->renderer->render_text($self->pos + $self->geo->points->{$self->focus}, ' ▶');
+            $self->renderer->render_text($self->pos + $self->geo->points->{$_}, ' ▷')
                 for grep { $_ ne $self->focus } @CYCLES;
         } else {
-            ::render_text($self->pos + $self->geo->points->{$_}, ' ▷', $term)
+            $self->renderer->render_text($self->pos + $self->geo->points->{$_}, ' ▷')
                 for @CYCLES;
         }
         if (defined $self->{status}) {
-            ::render_text($self->pos + $self->geo->points->{R}, $self->{status}, $term)
+            $self->renderer->render_text($self->pos + $self->geo->points->{R}, $self->{status})
         }
-        ::render_text($self->pos + $self->geo->points->{T}, POSIX::strftime("%H:%M:%S", localtime), $term,
+        $self->renderer->render_text($self->pos + $self->geo->points->{T}, POSIX::strftime("%H:%M:%S", localtime),
             -justify => 'right');
     }
 
 
 }
 
-my $BLANK = '.';
-$term->initscr($BLANK);
+package Question {
+    my $VIEW = <<'EOF';
++----------------------------------------------------------------+
+|                               $QUESTION                        |
+|----------------------------------------------------------------|
+|                                                                |
+|                                                                |
+|                        $YES        $NO                         |
+|                                                                |
+|                               $ANS                             |
+|________________________________________________________________|
+EOF
 
-my $menu = Menu::from_xy(10,10);
-$menu->render(1/60, $term);
+    use Utils qw(getters);
+
+    getters qw(
+        answer
+        focus
+        geo
+        lastpos
+        pos
+        question
+        renderer
+        z
+    );
+
+    sub from_xyz($x, $y, $z, $question, $renderer) {
+        my $pos = Matrix3::Vec::from_xy($x, $y);
+        my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
+        bless {
+            focus => "NO",
+            geo => $geo,
+            pos => $pos,
+            renderer => $renderer,
+            question => $question,
+            answer => undef,
+            z => $z,
+        }, __PACKAGE__;
+    }
+
+    sub update($self, $dt, @events) {
+        for my $event (@events) {
+            my $char = $event->payload->char;
+            if ($char eq "h") {
+                $self->{focus} = "YES";
+            } elsif ($char eq "l") {
+                $self->{focus} = "NO";
+            } elsif ($event->payload->code == 0x0a) {
+                $self->{answer} = sprintf "%3s", $self->focus;
+            }
+        }
+    }
+    
+    sub render($self) {
+        $self->renderer->render_geometry($self->pos, $self->geo);
+        $self->renderer->render_text(
+            $self->pos + $self->geo->points->{QUESTION},
+            $self->question,
+            -justify => 'center');
+
+        if ($self->focus eq "YES") {
+            $self->renderer->render_text($self->pos + $self->geo->points->{YES}, "> YES");
+            $self->renderer->render_text($self->pos + $self->geo->points->{NO},  "  NO ");
+        } elsif ($self->focus eq "NO") {
+            $self->renderer->render_text($self->pos + $self->geo->points->{YES}, "  YES");
+            $self->renderer->render_text($self->pos + $self->geo->points->{NO},  "> NO ");
+        }
+
+        if ($self->answer) {
+            $self->renderer->render_text($self->pos + $self->geo->points->{ANS}, $self->answer);
+        }
+    }
+
+}
+
+my $term = Termlib->new();
+my $COLS = $term->cols;
+my $ROWS = $term->rows;
+
+# Set origin to screen center and reflect over x axis
+# st y increases upwards in world_space
+my $terminal_space = Matrix3::translate(($COLS - 1)/2, $ROWS/2)
+            ->mul_mat_inplace($REFLECT_X);
+
+my $inp = Input::new();
+
+my $dt = Time::HiRes::time();
+
+my $renderer = Renderers::Naive::new($terminal_space);
+$renderer->initstr();
+
+my $menu = Menu::from_xyz(10,10,0, $renderer);
+$menu->render();
+
+my $question = Question::from_xyz(10,20,-1,"Is anybody in there?", $renderer);
+$question->render();
+
+my @WIDS = (
+    $menu, 
+    $question
+);
+
+sub wids {
+    sort { $a->z <=> $b->z } @WIDS;
+}
 
 # # # render_text($pos, '@', $term);
 while (1) {
     my @events = $inp->poll(1);
+    my $dt = Time::HiRes::time() - $dt;
     # last unless @events;
-    $menu->update(@events);
-    $menu->render(1/60, $term);
+    $_->update($dt, @events) for @WIDS;
+    for my $event (@events) {
+        if ($event->payload->char eq 'S') {
+            ($question->{z}, $menu->{z}) = ($menu->z, $question->z);
+        }
+
+    }
+    $_->render() for wids;
+    $renderer->flush();
 }
 #  
 # # $term->initscr(' ');
