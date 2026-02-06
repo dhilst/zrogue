@@ -200,3 +200,33 @@ This constructor expect a string like this:
     EOF
 
 The '.' are treated as transparent and do not become part of the geometry.
+
+You can also define named points and regions in the template string.
+
+Use $FOO for named points. For named regions use @BAR, @BAR in a diagonal,
+here is an example
+
+
+my $screen = Geometry3::from_str(<<'EOF', -centerfy)
++-----------------------------+
+|                             |
+|       Score: $SCORE         |
+|                             |
+|=============================|
+| @DETAILS                    |
+|                             |
+|                             |
+|                             |
+|                    @DETAILS |
++-----------------------------+
+EOF
+
+Then you can access it with
+$screen->points->{SCORE};    # a Matrix3::Vec
+$screen->regions->{DETAILS}; # a Viewport
+
+The coordinates are relative to the geometry origin which
+can be:
+
+1. The topleft corner (the default)
+2. The center of the model (if -centerfy => 1 is passed to from_str)

@@ -16,7 +16,7 @@ sub new($cls) {
 }
 
 sub rows {
-    int(`tput lines`) - 1;
+    int(`tput lines`);
 }
 
 sub cols {

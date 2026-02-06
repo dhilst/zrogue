@@ -42,3 +42,17 @@ sub move($self, $to_matrix) {
 }
 
 1;
+
+__END__
+
+=head1 SYNOPSIS
+
+Viewport allow you to get center, and corner positions from an initial position $pos,
+and dimmesions H x W. Then the user can use the following methods to get each position
+
+=head1 NOTES
+
+1. The Y grows UP, so bottomleft and bottomright are in -H negative values. This means
+   that the second row is -1 not 1. This is to keep Y grows upwards convetion.
+
+

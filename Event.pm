@@ -32,7 +32,7 @@ package Event::KeyPress {
 }
 
 use overload
-'""' => \&to_str;
+    '""' => \&to_str;
 
 struct
     type => '$',

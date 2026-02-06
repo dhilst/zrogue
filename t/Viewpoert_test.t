@@ -14,9 +14,9 @@ sub vect($x,$y) { Matrix3::Vec::from_xy($x,$y) }
 # ------------------------------------------------------------
 
 subtest 'from_pos_hw basic geometry' => sub {
-    my $pos = vect(10, 20);
-    my $h = 5;
-    my $w = 7;
+    my $pos = vect(0, 0);
+    my $h = 2;
+    my $w = 3;
 
     my $vp = Viewport::from_pos_hw($pos, $h, $w);
 
@@ -27,17 +27,11 @@ subtest 'from_pos_hw basic geometry' => sub {
     is($vp->w, $w, 'width stored');
 
     # corners
-    is($vp->topleft,     vect(10, 20), 'topleft correct');
-    is($vp->topright,    vect(16, 20), 'topright correct');
-    is($vp->bottomleft,  vect(10, 24), 'bottomleft correct');
-    is($vp->bottomright, vect(16, 24), 'bottomright correct');
-
-    # center: ((w-1)/2, (h-1)/2) = (3,2)
-    is(
-        $vp->center,
-        vect(13, 22),
-        'center correct'
-    );
+    is($vp->topleft,     vect(0,  0), 'topleft correct');
+    is($vp->topright,    vect(2,  0), 'topright correct');
+    is($vp->bottomleft,  vect(0, -1), 'bottomleft corret');
+    is($vp->bottomright, vect(2, -1), 'bottomright corret');
+    is($vp->center,      vect(1, -1), 'bottomright corret');
 };
 
 # ------------------------------------------------------------
@@ -46,16 +40,15 @@ subtest 'from_pos_hw basic geometry' => sub {
 
 subtest 'move applies transform to all points' => sub {
     my $pos = vect(0, 0);
-    my $vp = Viewport::from_pos_hw($pos, 3, 3);
+    my $vp = Viewport::from_pos_hw($pos, 3, 9);
 
-    my $move = Matrix3::translate(5, -2);
+    my $move = Matrix3::translate(1, 1);
     $vp->move($move);
-
-    is($vp->topleft,     vect(5, -2),  'topleft moved');
-    is($vp->topright,    vect(7, -2),  'topright moved');
-    is($vp->bottomleft,  vect(5,  0),  'bottomleft moved');
-    is($vp->bottomright, vect(7,  0),  'bottomright moved');
-    is($vp->center,      vect(6, -1),  'center moved');
+    is($vp->topleft,     vect(1, 1),  'topleft moved');
+    is($vp->topright,    vect(9, 1),  'topright moved');
+    is($vp->bottomleft,  vect(1,  -1),  'bottomleft moved');
+    is($vp->bottomright, vect(9,  -1),  'bottomright moved');
+    is($vp->center,      vect(5, 0),  'center moved');
 };
 
 # ------------------------------------------------------------

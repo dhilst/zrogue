@@ -15,7 +15,7 @@ use lib "$Bin/vendor/lib/perl5";
 use lib "$Bin";
 
 use Termlib;
-use Matrix3 qw($REFLECT_X);
+use Matrix3 qw($REFLECT_X $EAST $WEST $SOUTH $NORTH);
 use Geometry3;
 use Views;
 use Viewport;
@@ -44,8 +44,16 @@ sub render_geometry($at_vec, $geo, $term) {
     my $coord_mapper = $terminal_space * Matrix3::translate($at_vec->@*);
     for my $point ($geo->@*) {
         my ($pos_vec, $value) = $point->@*;
-        $pos_vec *= $coord_mapper;
-        $term->write_vec($value, $pos_vec);
+        $term->write_vec($value, $pos_vec * $coord_mapper);
+    }
+}
+
+sub erase_geometry($at_vec, $geo, $char, $term) {
+    use integer;
+    my $coord_mapper = $terminal_space * Matrix3::translate($at_vec->@*);
+    for my $point ($geo->@*) {
+        my ($pos_vec) = $point->@*;
+        $term->write_vec($char, $pos_vec * $coord_mapper);
     }
 }
 
@@ -54,30 +62,60 @@ sub render_text($at_vec, $text, $term, %opts) {
     $opts{-justify} //= 'left';
     if ($opts{-justify} eq 'center') {
         my $T = Matrix3::translate(- length($text) / 2, 0);
-        $term->write_vec($text, $at_vec * $T * $terminal_space);
+        my $p = $at_vec->copy;
+        $p *= $T *= $terminal_space;
+        $term->write_vec($text, $p);
         return;
     } elsif ($opts{-justify} eq 'right') {
         my $T = Matrix3::translate(- length($text), 0);
-        $term->write_vec($text, $at_vec * $T * $terminal_space);
+        my $p = $at_vec->copy;
+        $p *= $T *= $terminal_space;
+        $term->write_vec($text, $p);
         return;
     }
-
 
     $term->write_vec($text, $at_vec * $terminal_space);
 }
 
 my $inp = Input::new();
+
+my $square = Geometry3::from_str(<<'EOF', -centerfy => 1);
+,----------------------,
+|                      |
+|                      |
+|        Hello         |
+|                      |
+|                      |
+'----------------------'
+EOF
+
+
+my $BLANK = '.';
+$term->initscr($BLANK);
+my $pos = Matrix3::Vec::from_xy(0, 0);
+render_geometry($pos, $square, $term);
+# # render_text($pos, '@', $term);
 while (1) {
     my @events = $inp->poll(1);
     last unless @events;
-    say join " | ", @events;
+    for my $event (@events) {
+        my $char = $event->payload->char;
+        my $old_pos = $pos->copy;
+        if ($char eq "j") {
+            $pos *= $SOUTH;
+        } elsif ($char eq "k") {
+            $pos *= $NORTH;
+        } elsif ($char eq "h") {
+            $pos *= $WEST;
+        } elsif ($char eq "l") {
+            $pos *= $EAST;
+        }
+        erase_geometry($old_pos, $square, $BLANK, $term);
+        render_geometry($pos, $square, $term);
+    }
 }
-
-
-
-# $term->initscr('.');
+ 
 # $term->initscr(' ');
-# $term->initscr('█');
 # my $inventory = Geometry3::from_str($Views::INVENTORY, -centerfy => 1);
 # render_geometry($origin, $inventory, $term);
 # render_text($inventory->points->{NAME}, "LEON ", $term);
