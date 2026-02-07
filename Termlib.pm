@@ -9,17 +9,9 @@ use Term::ANSIColor qw(colored);
 
 use lib ".";
 use Utils qw(getters);
+use SGR qw(:attrs);
 
 getters qw(term);
-
-use constant {
-    ATTR_BOLD      => 1 << 0, # 1
-    ATTR_DIM       => 1 << 1, # 2
-    ATTR_ITALIC    => 1 << 2, # 4
-    ATTR_UNDERLINE => 1 << 3, # 8
-    ATTR_BLINK     => 1 << 4, # 16
-    ATTR_REVERSE   => 1 << 5, # 32
-};
 
 sub new() {
     bless {
@@ -51,11 +43,15 @@ sub write($self, $value, $col, $row, @ignored) {
     print $self->term->Tputs("rc", 1);
 }
 
-sub write_color($self, $value, $col, $row, $fg = undef, $bg = undef, @attrs) {
+sub write_color($self, $value, $col, $row, $fg = undef, $bg = undef, $attrs = undef) {
     local $| = 1;
     print $self->term->Tputs("sc", 1);
     print $self->term->Tgoto("cm", $col, $row);
-    print colored($value, grep { $_ } @attrs, $fg, $bg);
+    my @sgr_attrs;
+    push @sgr_attrs, SGR::attrs($attrs) if defined $attrs;
+    push @sgr_attrs, SGR::fg($fg) if defined $fg;
+    push @sgr_attrs, SGR::bg($bg) if defined $bg;
+    print colored($value, @sgr_attrs);
     print $self->term->Tputs("rc", 1);
 }
 

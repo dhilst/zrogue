@@ -218,11 +218,12 @@ my $terminal_space = Matrix3::translate(($COLS - 1)/2, $ROWS/2)
 
 my $origin = Matrix3::Vec::from_xy(0, 0) * $terminal_space;
 
-$term->initscr('.');
-$term->write_color("hello world", $origin->@*,
-    SGR::fg(0xff00ff),
-    SGR::bg(0x00aa00),
-    SGR::attrs(ATTR_BOLD | ATTR_ITALIC | ATTR_UNDERLINE | ATTR_REVERSE));
+$term->initscr(' ');
+$term->write_color("hello world",
+    $origin->@*,
+    0xff00ff,
+    0x00aa00,
+    ATTR_BOLD | ATTR_ITALIC | ATTR_UNDERLINE | ATTR_REVERSE);
 
 # my $inp = Input::new();
 # 
