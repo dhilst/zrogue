@@ -160,7 +160,7 @@ EOF
 
     sub from_xyz($x, $y, $z, $question, $renderer) {
         my $pos = Matrix3::Vec::from_xy($x, $y);
-        my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
+        my $geo = Geometry3::from_str($VIEW);
         bless {
             focus => "NO",
             geo => $geo,
@@ -186,6 +186,7 @@ EOF
     }
     
     sub render($self) {
+        # $self->renderer->erase_geometry($self->pos, $self->geo);
         $self->renderer->render_geometry($self->pos, $self->geo);
         $self->renderer->render_text(
             $self->pos + $self->geo->points->{QUESTION},
@@ -234,48 +235,55 @@ my $inp = Input::new();
 my $dt = Time::HiRes::time();
 
 # my $renderer = Renderers::Naive::new($terminal_space);
-my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS);
+my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1);
 $renderer->initscr();
 
-my $square = Geometry3::from_str(<<'EOF', -centerfy => 1);
-xxxxxxxxxxxxxxxx
-x              x
-x    Hello     x
-x              x
-xxxxxxxxxxxxxxxx
-EOF
-
-$renderer->render_text($origin, "Hello", 0xff0000, 0x0000ff, ATTR_BOLD);
-$renderer->render_geometry(Matrix3::Vec::from_xy(-20, 0), $square);
-$renderer->flush();
-#
-# my $menu = Menu::from_xyz(10,10,0, $renderer);
-# $menu->render();
-#
-# my $question = Question::from_xyz(10,20,-1,"Is anybody in there?", $renderer);
+my $question = Question::from_xyz(10,20,-1,"Is anybody in there?", $renderer);
 # $question->render();
+# say $renderer->queue->to_string;
+# say "front buffer-------------------------";
+# say $renderer->fbuf->to_ansi_string;
+# say "back buffer--------------------";
+# say $renderer->bbuf->to_ansi_string;
+# $renderer->flush();
+# sleep 1;
+# say '------------------------------------';
+# $question->{focus} = "YES";
+# $question->render();
+# say "front buffer 2-------------------------";
+# say $renderer->fbuf->to_ansi_string;
+# say "back buffer 2--------------------";
+# say $renderer->bbuf->to_ansi_string;
+# $renderer->flush();
+
+
+# The problem is that I add ' ' behind the letters of labels 
+# in the geometry. For example $FOO will add '    ' to the
+# geometry. This is effectively to make possible to fill and
+# empty string in the place of $FOO and still avoid having a
+# tranparent hole (because $FOO has 4 chars, while "" have 0,
+# if I do not fill with spaces it render nothing at that place
+# and the widget behind it will be visible by that 4 chars
+# hole. When these spaces are submitted for rendering, the
+# frontbuffer have the text in the place where they live,
+# they are then written to the backbuffer and this is why I
+# see they blinking
 #
-# my @WIDS = (
-#     $menu, 
-#     $question
-# );
-#
-# sub wids {
-#     sort { $a->z <=> $b->z } @WIDS;
-# }
-#
-# # # # render_text($pos, '@', $term);
-# while (1) {
-#     my @events = $inp->poll(1);
-#     my $dt = Time::HiRes::time() - $dt;
-#     # last unless @events;
-#     $_->update($dt, @events) for @WIDS;
-#     for my $event (@events) {
-#         if ($event->payload->char eq 'S') {
-#             ($question->{z}, $menu->{z}) = ($menu->z, $question->z);
-#         }
-#
-#     }
-#     $_->render() for wids;
-#     $renderer->flush();
-# }
+
+while (1) {
+    my @events = $inp->poll(1);
+    my $dt = Time::HiRes::time() - $dt;
+    $question->update($dt, @events);
+    $question->render();
+    if ($ENV{SUPRESS_TERMLIB}) {
+        say 'v--------------------------------------------------------v';
+        say "Front buffer:";
+        say $renderer->fbuf->to_ansi_string();
+        say "Back buffer:";
+        say $renderer->bbuf->to_ansi_string();
+        say "Queue";
+        say $renderer->queue->to_string();
+        say '^--------------------------------------------------------^';
+    }
+    $renderer->flush();
+}

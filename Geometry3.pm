@@ -69,7 +69,7 @@ sub from_str($str, %opts) {
                 # we hit a @ or $
                 $label_text = $col;
                 $label_pos = $pos->copy;
-                push @geometry, [$pos->copy, $bg];
+                # push @geometry, [$pos->copy, $bg];
                 $pos *= $EAST;
                 next;
             }
