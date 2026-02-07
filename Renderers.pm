@@ -13,7 +13,7 @@ package Renderers::Naive {
     sub new($terminal_space, $blank = '.') {
         bless {
             terminal_space => $terminal_space,
-            term => Termlib->new(),
+            term => Termlib::new(),
             blank => $blank,
         }, __PACKAGE__,
     }
@@ -68,6 +68,67 @@ package Renderers::Naive {
     }
 }
 
+package Renderers::PackedBuffer2D::Command {
+    use v5.36;
+    use Term::ANSIColor qw(colored);
+    use Utils qw(getters);
+
+    use constant {
+        ATTR_BOLD      => 1 << 0, # 1
+        ATTR_DIM       => 1 << 1, # 2
+        ATTR_ITALIC    => 1 << 2, # 4
+        ATTR_UNDERLINE => 1 << 3, # 8
+        ATTR_BLINK     => 1 << 4, # 16
+        ATTR_REVERSE   => 1 << 5, # 32
+    };
+
+    getters qw(
+        attrs
+        bg
+        col
+        fg
+        payload
+        row
+    );
+
+    sub new($col, $row, $fg = 0, $bg = 0, $attrs = [], $payload = "") {
+        bless {
+            attrs => $attrs,        # 32bit
+            bg => $bg,              # 32bit
+            col => $col,            # 32bit
+            fg => $fg,              # 32bit
+            payload => $payload,    # string
+            row => $row,            # 32bit
+        }, __PACKAGE__;
+    }
+
+    sub to_sgr($self) {
+        my $bg = _rgb("on_", $self->bg);
+        my $fg = _rgb("", $self->fg);
+        colored($self->payload, [_attr_to_strs($self->attrs), $fg, $bg]);
+    }
+
+    sub _rbg($prefix, $color) {
+        sprintf "%sr%dg%db%d",
+            $prefix,
+            ($color >> 16),
+            ($color >> 8 & 0xff),
+            ($color & 0xff),
+
+    }
+
+    sub _attr_to_strs($attrs) {
+        my @attrs;
+        push @attrs, "bold" if $attrs & ATTR_BOLD;
+        push @attrs, "dim" if $attrs & ATTR_DIM;
+        push @attrs, "italic" if $attrs & ATTR_ITALIC;
+        push @attrs, "blink" if $attrs & ATTR_BLINK;
+        push @attrs, "reverse" if $attrs & ATTR_REVERSE;
+        @attrs;
+    }
+
+}
+
 package Renderers::PackedBuffer2D {
     use v5.36;
     use Utils qw(getters);
@@ -109,6 +170,14 @@ package Renderers::PackedBuffer2D {
         unpack($self->packstr, $self->get_1d_packed($nth));
     }
 
+    sub get_packed($self, $col, $row) {
+        $self->get_1d_packed($row * $self->width + $col);
+    }
+
+    sub get($self, $col, $row) {
+        $self->get_1d($row * $self->width + $col);
+    }
+
     sub set_1d_packed($self, $nth, $packed_values) {
         substr($self->{buffer}, $nth * $self->stride, $self->stride) = $packed_values;
         undef;
@@ -119,24 +188,21 @@ package Renderers::PackedBuffer2D {
         undef;
     }
 
+    sub set($self, $col, $row, @values) {
+        $self->set_1d_packed($row * $self->width + $col, pack($self->packstr, @values));
+    }
+
     sub eq_1d_packed($self, $nth, $packed_values) {
         substr($self->buffer, $nth * $self->stride, $self->stride) eq $packed_values;
     }
+
 
     sub eq_packed($self, $col, $row, $packed_values) {
         $self->eq_1d_packed($row * $self->width + $col, $packed_values);
     }
 
     sub eq($self, $col, $row, @values) {
-        substr($self->buffer, $row * $col * $self->stride, $self->stride) eq pack($self->packstr, @values);
-    }
-
-    sub get($self, $col, $row) {
-        $self->get_1d($row * $self->width + $col);
-    }
-
-    sub set($self, $col, $row, @values) {
-        $self->set_1d($row * $self->width + $col, @values);
+        $self->eq_1d_packed($row * $col, pack($self->packstr, @values));
     }
 
     sub reset($self) {
@@ -144,65 +210,37 @@ package Renderers::PackedBuffer2D {
     }
 }
 
-package Renderers::Doublebuffering {
+package Renderers::DoubleBuffering {
     use v5.36;
-    use FindBin qw($Bin);
-    use Carp;
-    use lib "$Bin";
-
-    use Matrix3 qw($EAST);
-    use Termlib;
     use Utils qw(getters);
 
     getters qw(
-        bbuffer
-        fbuffer
+        terminal_space
+        height
+        width
     );
 
     sub new($terminal_space, $H, $W, $blank = '.') {
-        # 
-        # Buffer cell layout
-        #
-        # Bits: 0--------32---------64---------96-----------128
-        #       | Glyph  | FG Color | BG Color | Attributes |
-        #       +--------+----------+----------+------------+
-        #   
-        # These are 4 longs, (32 bit each)
-        
         my $packstr = "L4";
-        my $fbuffer = Renderers::PackedBuffer2D::new($packstr, $H, $W); # front buffer
-        my $bbuffer = Renderers::PackedBuffer2D::new($packstr, $H, $W); # back buffer
-
+        my $bbuf = Renderers::PackedBuffer2D::new($packstr, $H, $W);
+        my $fbuf = Renderers::PackedBuffer2D::new($packstr, $H, $W);
         bless {
-            fbuffer => $fbuffer,
-            bbuffer => $bbuffer,
+            bbuf => $bbuf,
+            fbuf => $fbuf,
+            blank => $blank,
+            height => $H,
+            terminal_space => $terminal_space,
+            width => $W,
+            packstr => $packstr,
+            term => Termlib::new(),
         }, __PACKAGE__;
     }
 
-    sub swap($self) {
-        ($self->{fbuffer}, $self->{bbuffer}) = ($self->bbuffer, $self->fbuffer);
+    sub render_text($self, $pos_vec, $text, $fg = undef, $bg = undef, @attrs) {
+
     }
 
-
-    sub initscr($self) {
-        $self->term->initscr($self->blank);
-    }
-
-    sub render_geometry($self, $at_vec, $geo) {
-    }
-
-    sub erase_geometry($self, $at_vec, $geo, $char) {
-    }
-
-    sub render_text($self, $at_vec, $text, %opts) {
-    }
-
-    sub render_fmt($self, $at_vec, $fmt, @args) {
-        $self->render_text($at_vec, sprintf($fmt, @args));
-    }
-
-    sub flush($self) {
-    }
 }
+
 
 1;

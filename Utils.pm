@@ -27,5 +27,4 @@ package Utils::Array {
     }
 }
 
-
 1;

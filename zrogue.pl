@@ -22,6 +22,7 @@ use Viewport;
 use Input;
 use Utils qw(aref);
 use Renderers;
+use SGR qw(:attrs);
 
 package Menu {
     no autovivification;
@@ -206,7 +207,7 @@ EOF
 
 }
 
-my $term = Termlib->new();
+my $term = Termlib::new();
 my $COLS = $term->cols;
 my $ROWS = $term->rows;
 
@@ -215,43 +216,51 @@ my $ROWS = $term->rows;
 my $terminal_space = Matrix3::translate(($COLS - 1)/2, $ROWS/2)
             ->mul_mat_inplace($REFLECT_X);
 
-my $inp = Input::new();
+my $origin = Matrix3::Vec::from_xy(0, 0) * $terminal_space;
 
-my $dt = Time::HiRes::time();
+$term->initscr('.');
+$term->write_color("hello world", $origin->@*,
+    SGR::fg(0xff00ff),
+    SGR::bg(0x00aa00),
+    SGR::attrs(ATTR_BOLD | ATTR_ITALIC | ATTR_UNDERLINE | ATTR_REVERSE));
 
-my $renderer = Renderers::Naive::new($terminal_space);
-$renderer->initscr();
-
-my $menu = Menu::from_xyz(10,10,0, $renderer);
-$menu->render();
-
-my $question = Question::from_xyz(10,20,-1,"Is anybody in there?", $renderer);
-$question->render();
-
-my @WIDS = (
-    $menu, 
-    $question
-);
-
-sub wids {
-    sort { $a->z <=> $b->z } @WIDS;
-}
-
-# # # render_text($pos, '@', $term);
-while (1) {
-    my @events = $inp->poll(1);
-    my $dt = Time::HiRes::time() - $dt;
-    # last unless @events;
-    $_->update($dt, @events) for @WIDS;
-    for my $event (@events) {
-        if ($event->payload->char eq 'S') {
-            ($question->{z}, $menu->{z}) = ($menu->z, $question->z);
-        }
-
-    }
-    $_->render() for wids;
-    $renderer->flush();
-}
+# my $inp = Input::new();
+# 
+# my $dt = Time::HiRes::time();
+# 
+# my $renderer = Renderers::Naive::new($terminal_space);
+# $renderer->initscr();
+# 
+# my $menu = Menu::from_xyz(10,10,0, $renderer);
+# $menu->render();
+# 
+# my $question = Question::from_xyz(10,20,-1,"Is anybody in there?", $renderer);
+# $question->render();
+# 
+# my @WIDS = (
+#     $menu, 
+#     $question
+# );
+# 
+# sub wids {
+#     sort { $a->z <=> $b->z } @WIDS;
+# }
+# 
+# # # # render_text($pos, '@', $term);
+# while (1) {
+#     my @events = $inp->poll(1);
+#     my $dt = Time::HiRes::time() - $dt;
+#     # last unless @events;
+#     $_->update($dt, @events) for @WIDS;
+#     for my $event (@events) {
+#         if ($event->payload->char eq 'S') {
+#             ($question->{z}, $menu->{z}) = ($menu->z, $question->z);
+#         }
+# 
+#     }
+#     $_->render() for wids;
+#     $renderer->flush();
+# }
 #  
 # # $term->initscr(' ');
 # # my $inventory = Geometry3::from_str($Views::INVENTORY, -centerfy => 1);
