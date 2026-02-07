@@ -151,14 +151,20 @@ package Renderers::PackedBuffer2D {
 
 package Renderers::DoubleBuffering {
     use v5.36;
+    use Data::Dumper;
     use Utils qw(getters);
     use Matrix3 qw($EAST);
     no autovivification;
 
     getters qw(
-        terminal_space
+        bbuf
+        fbuf
+        blank
         height
+        terminal_space
         width
+        packstr
+        term
         queue
     );
 
@@ -179,68 +185,86 @@ package Renderers::DoubleBuffering {
         }, __PACKAGE__;
     }
 
+    sub initscr($self) {
+        $self->term->initscr($self->blank);
+    }
+
     sub render_geometry($self, $pos_vec, $geo) {
         for my $point ($geo->@*) {
-            $self->render_text($point->@*);
+            my ($pos, $text, $fg, $bg, $attrs) = $point->@*;
+            $self->render_text($pos += $pos_vec, $text);
         }
     }
 
-    sub render_text($self, $pos_vec, $text, $fg = undef, $bg = undef, $attrs = undef) {
-        my $pos = $pos_vec->copy;
+    sub render_text($self, $pos_vec, $text, $fg = -1, $bg = -1, $attrs = -1) {
+        my $pos = $pos_vec * $self->terminal_space;
         for my $codepoint (split //u, $text) {
+            $self->_render_point($pos, $codepoint, $fg, $bg, $attrs);
             $pos *= $EAST;
-            render_point($pos, $codepoint, $fg, $bg, $attrs);
         }
     }
 
-    sub render_point($self, $pos_vec, $glyph, $fg = undef, $bg = undef, $attrs = undef) {
-        my $pack = $self->_pack($glyph, $fg, $bg, $attrs);
-        # front buffer is already updated, nothing to do
-        return if $self->fbuf->eq_packed($pos_vec->@*, $pack);
+    sub render_fmt($self, $pos_vec, $fmt, @args) {
+        $self->render_text($pos_vec, sprintf($fmt, @args));
+    }
 
+    sub _render_point($self, $pos_vec, $glyph, $fg = -1, $bg = -1, $attrs = -1) {
+        my $pack = $self->_pack($glyph, $fg, $bg, $attrs);
+        # # front buffer is already updated, nothing to do
+        return if $self->fbuf->eq_packed($pos_vec->@*, $pack);
         $self->enqueue($pos_vec, $glyph, $fg, $bg, $attrs);
     }
 
-    sub enqueue($self, $pos_vec, $glyph, $fg = undef, $bg = undef, $attrs = undef) {
+    sub enqueue($self, $pos_vec, $glyph, $fg = -1, $bg = -1, $attrs = -1) {
         my ($col, $row) = $pos_vec->@*;
         if ($self->queue->@*) {
             my $last = $self->queue->[$self->queue->$#*];
-            if ($last->{row} eq $row &&
-                $last->{col} + 1 eq $col &&
-                $last->{fg} eq $fg &&
+            my $last_end = $last->{col} + length($last->{payload});
+            if (
+                $last->{row} eq $row &&
+                $last_end eq $col &&
+                $last->{attrs} eq $attrs &&
                 $last->{bg} eq $bg &&
-                $last->{attrs} eq $attrs
+                $last->{fg} eq $fg
             ) {
                 $last->{payload} .= $glyph;
+                return;
             }
         }
 
-        push $self->queue->@*, {
-            row => $col,
-            col => $row,
-            payload => $glyph,
-            fg => $fg,
-            bg => $bg,
+        push $self->{queue}->@*, {
             attrs => $attrs,
-        }
+            bg => $bg,
+            col => $col,
+            fg => $fg,
+            payload => $glyph,
+            row => $row,
+        };
     }
 
     sub flush($self) {
         for my $command ($self->queue->@*) {
             $self->term->write_color(
                 $command->{payload},
+                $command->{col},
+                $command->{row},
                 $command->{fg},
                 $command->{bg},
-                $command->{attrs})
+                $command->{attrs});
         }
-        $self->{queue} = [];
+        $self->reset();
 
         undef;
     }
 
+    sub reset($self) {
+        $self->{queue} = [];
+        ($self->{fbuf}, $self->{bbuf}) = ($self->bbuf, $self->fbuf);
+    }
 
-    sub _pack($self, $glyph, $fg = undef, $bg = undef, $attrs = undef) {
-        pack($self->packstr, $fg // -1, $bg // -1, $attrs // 0);
+
+    sub _pack($self, $glyph, $fg = -1 , $bg = -1, $attrs = -1) {
+        pack($self->packstr, $fg, $bg, $attrs);
     }
 
 }

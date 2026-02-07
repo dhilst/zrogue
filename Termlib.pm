@@ -4,6 +4,7 @@ use v5.36;
 use utf8;
 use open ':std', ':encoding(UTF-8)';
 
+use Data::Dumper;
 use Term::Cap;
 use Term::ANSIColor qw(colored);
 
@@ -43,15 +44,19 @@ sub write($self, $value, $col, $row, @ignored) {
     print $self->term->Tputs("rc", 1);
 }
 
-sub write_color($self, $value, $col, $row, $fg = undef, $bg = undef, $attrs = undef) {
+sub write_color($self, $value, $col, $row, $fg = -1, $bg = -1, $attrs = -1) {
     local $| = 1;
+    my @sgr_attrs;
     print $self->term->Tputs("sc", 1);
     print $self->term->Tgoto("cm", $col, $row);
-    my @sgr_attrs;
-    push @sgr_attrs, SGR::attrs($attrs) if defined $attrs;
-    push @sgr_attrs, SGR::fg($fg) if defined $fg;
-    push @sgr_attrs, SGR::bg($bg) if defined $bg;
-    print colored($value, @sgr_attrs);
+    push @sgr_attrs, SGR::attrs($attrs) if $attrs ne -1;
+    push @sgr_attrs, SGR::fg($fg) if $fg ne -1;
+    push @sgr_attrs, SGR::bg($bg) if $bg ne -1;
+    if (@sgr_attrs) {
+        print colored($value, @sgr_attrs);
+    } else {
+        print $value;
+    }
     print $self->term->Tputs("rc", 1);
 }
 

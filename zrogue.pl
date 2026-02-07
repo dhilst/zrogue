@@ -216,37 +216,54 @@ my $ROWS = $term->rows;
 my $terminal_space = Matrix3::translate(($COLS - 1)/2, $ROWS/2)
             ->mul_mat_inplace($REFLECT_X);
 
-my $origin = Matrix3::Vec::from_xy(0, 0) * $terminal_space;
+my $origin = Matrix3::Vec::from_xy(0, 0);
+# my $above_origin = Matrix3::Vec::from_xy(0, 10) * $terminal_space;
+# $term->initscr(' ');
+#
+# $term->write("hello world",
+#     $above_origin->@*);
+#
+# $term->write_color("hello world",
+#     $origin->@*,
+#     0x00ff00,
+#     0xff00ff,
+#     ATTR_BOLD | ATTR_ITALIC | ATTR_UNDERLINE | ATTR_DARK);
 
-$term->initscr(' ');
-$term->write_color("hello world",
-    $origin->@*,
-    0x00ff00,
-    0xff00ff,
-    ATTR_BOLD | ATTR_ITALIC | ATTR_UNDERLINE | ATTR_REVERSE);
+my $inp = Input::new();
 
-# my $inp = Input::new();
-# 
-# my $dt = Time::HiRes::time();
-# 
+my $dt = Time::HiRes::time();
+
 # my $renderer = Renderers::Naive::new($terminal_space);
-# $renderer->initscr();
-# 
+my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS);
+$renderer->initscr();
+
+my $square = Geometry3::from_str(<<'EOF', -centerfy => 1);
+xxxxxxxxxxxxxxxx
+x              x
+x    Hello     x
+x              x
+xxxxxxxxxxxxxxxx
+EOF
+
+$renderer->render_text($origin, "Hello", 0xff0000, 0x0000ff, ATTR_BOLD);
+$renderer->render_geometry(Matrix3::Vec::from_xy(-20, 0), $square);
+$renderer->flush();
+#
 # my $menu = Menu::from_xyz(10,10,0, $renderer);
 # $menu->render();
-# 
+#
 # my $question = Question::from_xyz(10,20,-1,"Is anybody in there?", $renderer);
 # $question->render();
-# 
+#
 # my @WIDS = (
 #     $menu, 
 #     $question
 # );
-# 
+#
 # sub wids {
 #     sort { $a->z <=> $b->z } @WIDS;
 # }
-# 
+#
 # # # # render_text($pos, '@', $term);
 # while (1) {
 #     my @events = $inp->poll(1);
@@ -257,23 +274,8 @@ $term->write_color("hello world",
 #         if ($event->payload->char eq 'S') {
 #             ($question->{z}, $menu->{z}) = ($menu->z, $question->z);
 #         }
-# 
+#
 #     }
 #     $_->render() for wids;
 #     $renderer->flush();
 # }
-#  
-# # $term->initscr(' ');
-# # my $inventory = Geometry3::from_str($Views::INVENTORY, -centerfy => 1);
-# # render_geometry($origin, $inventory, $term);
-# # render_text($inventory->points->{NAME}, "LEON ", $term);
-# # render_text($inventory->points->{FILE}, "> FILE", $term);
-# # render_text($inventory->points->{MAP}, "> MAP", $term);
-# # render_text($inventory->points->{ITEM}, "> ITEM", $term);
-# # render_text($inventory->points->{EXIT}, "> EXIT", $term);
-# # render_text($inventory->points->{HAND}, "> 9mm Pistol", $term, -justify => 'center');
-# # render_text($inventory->points->{PKT}, "> Lighter", $term, -justify => 'center');
-# # render_text($inventory->regions->{HEALTH}->bottomright, "Fine", $term, -justify => 'right');
-# # render_text($inventory->regions->{STATUS}->center, "Some item image here", $term, -justify => 'center');
-# # render_text($inventory->regions->{TEXT}->center, "Some item text description here", $term, -justify => 'center');
-# # render_text($inventory->regions->{INVENTORY}->topleft, "List of items in invetory", $term,);
