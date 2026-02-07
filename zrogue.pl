@@ -220,7 +220,7 @@ my $inp = Input::new();
 my $dt = Time::HiRes::time();
 
 my $renderer = Renderers::Naive::new($terminal_space);
-$renderer->initstr();
+$renderer->initscr();
 
 my $menu = Menu::from_xyz(10,10,0, $renderer);
 $menu->render();

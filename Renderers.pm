@@ -18,7 +18,7 @@ package Renderers::Naive {
         }, __PACKAGE__,
     }
 
-    sub initstr($self) {
+    sub initscr($self) {
         $self->term->initscr($self->blank);
     }
 
@@ -58,6 +58,143 @@ package Renderers::Naive {
         }
 
         $self->term->write_vec($text, $at_vec * $self->terminal_space);
+    }
+
+    sub render_fmt($self, $at_vec, $fmt, @args) {
+        $self->render_text($at_vec, sprintf($fmt, @args));
+    }
+
+    sub flush($self) {
+    }
+}
+
+package Renderers::PackedBuffer2D {
+    use v5.36;
+    use Utils qw(getters);
+
+    getters qw(
+        bytes
+        buffer
+        height
+        packstr
+        size
+        stride
+        width
+        zbuffer
+    );
+
+    sub new($packstr, $H, $W) {
+        my $stride = length(pack($packstr));
+        my $size = $H * $W;
+        my $bytes = $size * $stride;
+        my $buffer = "\0" x $bytes;
+        my $zbuffer = "\0" x $bytes;
+        bless {
+            buffer => $buffer,
+            bytes => $bytes,    # size in bytes
+            height => $H,
+            packstr => $packstr,
+            size => $size,      # size in bytes / stride
+            stride => $stride,
+            width => $W,
+            zbuffer => $zbuffer,
+        }, __PACKAGE__;
+    }
+
+    sub get_1d_packed($self, $nth) {
+        substr($self->buffer, $nth * $self->stride, $self->stride);
+    }
+
+    sub get_1d($self, $nth) {
+        unpack($self->packstr, $self->get_1d_packed($nth));
+    }
+
+    sub set_1d_packed($self, $nth, $packed_values) {
+        substr($self->{buffer}, $nth * $self->stride, $self->stride) = $packed_values;
+        undef;
+    }
+    
+    sub set_1d($self, $nth, @values) {
+        $self->set_1d_packed($nth, pack($self->packstr, @values));
+        undef;
+    }
+
+    sub eq_1d_packed($self, $nth, $packed_values) {
+        substr($self->buffer, $nth * $self->stride, $self->stride) eq $packed_values;
+    }
+
+    sub eq_packed($self, $col, $row, $packed_values) {
+        $self->eq_1d_packed($row * $self->width + $col, $packed_values);
+    }
+
+    sub eq($self, $col, $row, @values) {
+        substr($self->buffer, $row * $col * $self->stride, $self->stride) eq pack($self->packstr, @values);
+    }
+
+    sub get($self, $col, $row) {
+        $self->get_1d($row * $self->width + $col);
+    }
+
+    sub set($self, $col, $row, @values) {
+        $self->set_1d($row * $self->width + $col, @values);
+    }
+
+    sub reset($self) {
+        $self->{buffer} = $self->zbuffer;
+    }
+}
+
+package Renderers::Doublebuffering {
+    use v5.36;
+    use FindBin qw($Bin);
+    use Carp;
+    use lib "$Bin";
+
+    use Matrix3 qw($EAST);
+    use Termlib;
+    use Utils qw(getters);
+
+    getters qw(
+        bbuffer
+        fbuffer
+    );
+
+    sub new($terminal_space, $H, $W, $blank = '.') {
+        # 
+        # Buffer cell layout
+        #
+        # Bits: 0--------32---------64---------96-----------128
+        #       | Glyph  | FG Color | BG Color | Attributes |
+        #       +--------+----------+----------+------------+
+        #   
+        # These are 4 longs, (32 bit each)
+        
+        my $packstr = "L4";
+        my $fbuffer = Renderers::PackedBuffer2D::new($packstr, $H, $W); # front buffer
+        my $bbuffer = Renderers::PackedBuffer2D::new($packstr, $H, $W); # back buffer
+
+        bless {
+            fbuffer => $fbuffer,
+            bbuffer => $bbuffer,
+        }, __PACKAGE__;
+    }
+
+    sub swap($self) {
+        ($self->{fbuffer}, $self->{bbuffer}) = ($self->bbuffer, $self->fbuffer);
+    }
+
+
+    sub initscr($self) {
+        $self->term->initscr($self->blank);
+    }
+
+    sub render_geometry($self, $at_vec, $geo) {
+    }
+
+    sub erase_geometry($self, $at_vec, $geo, $char) {
+    }
+
+    sub render_text($self, $at_vec, $text, %opts) {
     }
 
     sub render_fmt($self, $at_vec, $fmt, @args) {
