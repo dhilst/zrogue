@@ -221,8 +221,8 @@ my $origin = Matrix3::Vec::from_xy(0, 0) * $terminal_space;
 $term->initscr(' ');
 $term->write_color("hello world",
     $origin->@*,
+    0x00ff00,
     0xff00ff,
-    0x00aa00,
     ATTR_BOLD | ATTR_ITALIC | ATTR_UNDERLINE | ATTR_REVERSE);
 
 # my $inp = Input::new();

@@ -68,67 +68,6 @@ package Renderers::Naive {
     }
 }
 
-package Renderers::PackedBuffer2D::Command {
-    use v5.36;
-    use Term::ANSIColor qw(colored);
-    use Utils qw(getters);
-
-    use constant {
-        ATTR_BOLD      => 1 << 0, # 1
-        ATTR_DIM       => 1 << 1, # 2
-        ATTR_ITALIC    => 1 << 2, # 4
-        ATTR_UNDERLINE => 1 << 3, # 8
-        ATTR_BLINK     => 1 << 4, # 16
-        ATTR_REVERSE   => 1 << 5, # 32
-    };
-
-    getters qw(
-        attrs
-        bg
-        col
-        fg
-        payload
-        row
-    );
-
-    sub new($col, $row, $fg = 0, $bg = 0, $attrs = [], $payload = "") {
-        bless {
-            attrs => $attrs,        # 32bit
-            bg => $bg,              # 32bit
-            col => $col,            # 32bit
-            fg => $fg,              # 32bit
-            payload => $payload,    # string
-            row => $row,            # 32bit
-        }, __PACKAGE__;
-    }
-
-    sub to_sgr($self) {
-        my $bg = _rgb("on_", $self->bg);
-        my $fg = _rgb("", $self->fg);
-        colored($self->payload, [_attr_to_strs($self->attrs), $fg, $bg]);
-    }
-
-    sub _rbg($prefix, $color) {
-        sprintf "%sr%dg%db%d",
-            $prefix,
-            ($color >> 16),
-            ($color >> 8 & 0xff),
-            ($color & 0xff),
-
-    }
-
-    sub _attr_to_strs($attrs) {
-        my @attrs;
-        push @attrs, "bold" if $attrs & ATTR_BOLD;
-        push @attrs, "dim" if $attrs & ATTR_DIM;
-        push @attrs, "italic" if $attrs & ATTR_ITALIC;
-        push @attrs, "blink" if $attrs & ATTR_BLINK;
-        push @attrs, "reverse" if $attrs & ATTR_REVERSE;
-        @attrs;
-    }
-
-}
-
 package Renderers::PackedBuffer2D {
     use v5.36;
     use Utils qw(getters);
@@ -213,15 +152,18 @@ package Renderers::PackedBuffer2D {
 package Renderers::DoubleBuffering {
     use v5.36;
     use Utils qw(getters);
+    use Matrix3 qw($EAST);
+    no autovivification;
 
     getters qw(
         terminal_space
         height
         width
+        queue
     );
 
     sub new($terminal_space, $H, $W, $blank = '.') {
-        my $packstr = "L4";
+        my $packstr = "l4";
         my $bbuf = Renderers::PackedBuffer2D::new($packstr, $H, $W);
         my $fbuf = Renderers::PackedBuffer2D::new($packstr, $H, $W);
         bless {
@@ -233,11 +175,72 @@ package Renderers::DoubleBuffering {
             width => $W,
             packstr => $packstr,
             term => Termlib::new(),
+            queue => [],
         }, __PACKAGE__;
     }
 
-    sub render_text($self, $pos_vec, $text, $fg = undef, $bg = undef, @attrs) {
+    sub render_geometry($self, $pos_vec, $geo) {
+        for my $point ($geo->@*) {
+            $self->render_text($point->@*);
+        }
+    }
 
+    sub render_text($self, $pos_vec, $text, $fg = undef, $bg = undef, $attrs = undef) {
+        my $pos = $pos_vec->copy;
+        for my $codepoint (split //u, $text) {
+            $pos *= $EAST;
+            render_point($pos, $codepoint, $fg, $bg, $attrs);
+        }
+    }
+
+    sub render_point($self, $pos_vec, $glyph, $fg = undef, $bg = undef, $attrs = undef) {
+        my $pack = $self->_pack($glyph, $fg, $bg, $attrs);
+        # front buffer is already updated, nothing to do
+        return if $self->fbuf->eq_packed($pos_vec->@*, $pack);
+
+        $self->enqueue($pos_vec, $glyph, $fg, $bg, $attrs);
+    }
+
+    sub enqueue($self, $pos_vec, $glyph, $fg = undef, $bg = undef, $attrs = undef) {
+        my ($col, $row) = $pos_vec->@*;
+        if ($self->queue->@*) {
+            my $last = $self->queue->[$self->queue->$#*];
+            if ($last->{row} eq $row &&
+                $last->{col} + 1 eq $col &&
+                $last->{fg} eq $fg &&
+                $last->{bg} eq $bg &&
+                $last->{attrs} eq $attrs
+            ) {
+                $last->{payload} .= $glyph;
+            }
+        }
+
+        push $self->queue->@*, {
+            row => $col,
+            col => $row,
+            payload => $glyph,
+            fg => $fg,
+            bg => $bg,
+            attrs => $attrs,
+        }
+    }
+
+    sub flush($self) {
+        for my $command ($self->queue->@*) {
+            $self->term->write_color(
+                $command->{payload},
+                $command->{fg},
+                $command->{bg},
+                $command->{attrs})
+        }
+        $self->{queue} = [];
+
+        undef;
+    }
+
+
+    sub _pack($self, $glyph, $fg = undef, $bg = undef, $attrs = undef) {
+        pack($self->packstr, $fg // -1, $bg // -1, $attrs // 0);
     }
 
 }
