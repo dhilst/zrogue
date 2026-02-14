@@ -30,7 +30,7 @@ sub cols {
 }
 
 sub clear($self) {
-    return if $ENV{SUPRESS_TERMLIB};
+    return if $ENV{SUPPRESS_TERMLIB};
     local $| = 1;
     print $self->term->Tputs("ho", 1);
     print $self->term->Tputs("cl", 1);
@@ -39,7 +39,7 @@ sub clear($self) {
 # We ignore right extra arguments to allow calling
 # with homogeneous vectors as $term->write('x', $vec->@*);
 sub write($self, $value, $col, $row, @ignored) {
-    return if $ENV{SUPRESS_TERMLIB};
+    return if $ENV{SUPPRESS_TERMLIB};
     local $| = 1;
     print $self->term->Tputs("sc", 1);
     print $self->term->Tgoto("cm", $col, $row);
@@ -48,7 +48,7 @@ sub write($self, $value, $col, $row, @ignored) {
 }
 
 sub write_color($self, $value, $col, $row, $fg = -1, $bg = -1, $attrs = -1) {
-    return if $ENV{SUPRESS_TERMLIB};
+    return if $ENV{SUPPRESS_TERMLIB};
     local $| = 1;
     my @sgr_attrs;
     push @sgr_attrs, SGR::attrs($attrs) if $attrs ne -1;
@@ -71,7 +71,7 @@ sub write_vec($self, $value, $pos_vec) {
 }
 
 sub initscr($self, $default_value = ' ') {
-    return if $ENV{SUPRESS_TERMLIB};
+    return if $ENV{SUPPRESS_TERMLIB};
     local $| = 1;
     $self->clear;
     print join "\n", map { $default_value x ($self->cols - 1) } 0 .. $self->rows - 1;

@@ -22,8 +22,28 @@ sub getters(@fields) {
 }
 
 package Utils::Array {
+    use Carp;
+    use Data::Dumper;
+
     sub index_of($element, @array) {
         (List::Util::first { $array[$_] eq $element } 0 .. $#array) // -1;
+    }
+
+    sub for_batch :prototype(&$$) {
+        my ($block, $siz, $array) = @_;
+        confess "missing arguments"
+            unless defined $siz && defined $array;
+
+        my $max = scalar $array->@*;
+        my @out;
+        for (my $offset = 0; $offset < $max; $offset += $siz) {
+
+            my @slice = $array->@[$offset .. $offset + $siz - 1];
+            my $result = $block->(@slice);
+            # # do not push to array if we're in void context, this saves memory
+            push @out, $result if defined wantarray;
+        }
+        @out;
     }
 }
 

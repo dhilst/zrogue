@@ -160,7 +160,7 @@ EOF
 
     sub from_xyz($x, $y, $z, $question, $renderer) {
         my $pos = Matrix3::Vec::from_xy($x, $y);
-        my $geo = Geometry3::from_str($VIEW);
+        my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
         bless {
             focus => "NO",
             geo => $geo,
@@ -218,72 +218,37 @@ my $terminal_space = Matrix3::translate(($COLS - 1)/2, $ROWS/2)
             ->mul_mat_inplace($REFLECT_X);
 
 my $origin = Matrix3::Vec::from_xy(0, 0);
-# my $above_origin = Matrix3::Vec::from_xy(0, 10) * $terminal_space;
-# $term->initscr(' ');
-#
-# $term->write("hello world",
-#     $above_origin->@*);
-#
-# $term->write_color("hello world",
-#     $origin->@*,
-#     0x00ff00,
-#     0xff00ff,
-#     ATTR_BOLD | ATTR_ITALIC | ATTR_UNDERLINE | ATTR_DARK);
-
 my $inp = Input::new();
-
 my $dt = Time::HiRes::time();
 
 # my $renderer = Renderers::Naive::new($terminal_space);
 my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1);
 $renderer->initscr();
 
-my $question = Question::from_xyz(10,20,-1,"Is anybody in there?", $renderer);
-# $question->render();
-# say $renderer->queue->to_string;
-# say "front buffer-------------------------";
-# say $renderer->fbuf->to_ansi_string;
-# say "back buffer--------------------";
-# say $renderer->bbuf->to_ansi_string;
-# $renderer->flush();
-# sleep 1;
-# say '------------------------------------';
-# $question->{focus} = "YES";
-# $question->render();
-# say "front buffer 2-------------------------";
-# say $renderer->fbuf->to_ansi_string;
-# say "back buffer 2--------------------";
-# say $renderer->bbuf->to_ansi_string;
-# $renderer->flush();
+my $question = Question::from_xyz(0, 20, 1, "Hello?", $renderer);
 
+my @wids = (
+    $question,
+    Menu::from_xyz(10, 0, 2, $renderer),
+);
 
-# The problem is that I add ' ' behind the letters of labels 
-# in the geometry. For example $FOO will add '    ' to the
-# geometry. This is effectively to make possible to fill and
-# empty string in the place of $FOO and still avoid having a
-# tranparent hole (because $FOO has 4 chars, while "" have 0,
-# if I do not fill with spaces it render nothing at that place
-# and the widget behind it will be visible by that 4 chars
-# hole. When these spaces are submitted for rendering, the
-# frontbuffer have the text in the place where they live,
-# they are then written to the backbuffer and this is why I
-# see they blinking
-#
+sub wids {
+    sort { $b->{z} <=> $a->{z} } @wids;
+}
 
-while (1) {
-    my @events = $inp->poll(1);
-    my $dt = Time::HiRes::time() - $dt;
-    $question->update($dt, @events);
-    $question->render();
-    if ($ENV{SUPRESS_TERMLIB}) {
-        say 'v--------------------------------------------------------v';
-        say "Front buffer:";
-        say $renderer->fbuf->to_ansi_string();
-        say "Back buffer:";
-        say $renderer->bbuf->to_ansi_string();
-        say "Queue";
-        say $renderer->queue->to_string();
-        say '^--------------------------------------------------------^';
-    }
+sub update_all($dt, @events) {
+    $_->update($dt, @events) for @wids;
+}
+
+sub render_all {
+    $_->render() for wids;
     $renderer->flush();
 }
+
+render_all();
+while (1) {
+    my @events = $inp->poll(1);
+    update_all(1/60, @events);
+    render_all();
+}
+
