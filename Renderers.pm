@@ -43,6 +43,13 @@ package Renderers::Naive {
         $self->render_text($pos_vec, $self->blank x $length, %opts);
     }
 
+    sub render_quad($self, $pos_vec, $h, $w, %opts) {
+        for my $row (0 .. $h - 1) {
+            my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
+            $self->render_style($row_pos, $w, %opts);
+        }
+    }
+
     sub render_text($self, $at_vec, $text, %opts) {
         $opts{-justify} //= 'left';
         if ($opts{-justify} eq 'center') {
@@ -408,6 +415,13 @@ package Renderers::DoubleBuffering {
 
     sub render_style($self, $pos_vec, $length, %opts) {
         $self->render_text($pos_vec, $self->blank x $length, %opts);
+    }
+
+    sub render_quad($self, $pos_vec, $h, $w, %opts) {
+        for my $row (0 .. $h - 1) {
+            my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
+            $self->render_style($row_pos, $w, %opts);
+        }
     }
 
     sub render_fmt($self, $pos_vec, $fmt, @args) {
