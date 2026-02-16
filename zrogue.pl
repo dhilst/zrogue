@@ -37,15 +37,15 @@ package Menu {
     use Utils qw(getters);
 
     my $VIEW = <<'EOF';
-,------------------------------------------,
-| Menu                                   $T|
-|------------------------------------------|
-|$H MENU1        $P                        |
-|$M MENU2        $L                        |
-|$D MENU3                                  |
-|------------------------------------------|
-| Status: $R                               |
-'------------------------------------------'
+┌──────────────────────────────────────────┐
+│ Menu                                   $T│
+├──────────────────────────────────────────┤
+│$H MENU1        $P                        │
+│$M MENU2        $L                        │
+│$D MENU3                                  │
+├──────────────────────────────────────────┤
+│ Status: $R                               │
+└──────────────────────────────────────────┘
 EOF
 
 #|-------------------------------|
@@ -56,7 +56,7 @@ EOF
         D => 'MENU3',
     );
 
-    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft);
+    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft shadow_quad);
 
     sub from_xyz(
         $x, $y, $z,
@@ -85,6 +85,7 @@ EOF
         my $bg_w = $maxx - $minx + 1;
         my $bg_h = $maxy - $miny + 1;
         my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'MENU_BG');
+        my $shadow_quad = Quad::from_wh($bg_w, $bg_h, 'SHADOW_BG');
         my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
         bless {
             focus => undef,
@@ -95,6 +96,7 @@ EOF
             renderer => $renderer,
             bg_quad => $bg_quad,
             bg_topleft => $bg_topleft,
+            shadow_quad => $shadow_quad,
             z => $z,
         }, __PACKAGE__;
     }
@@ -125,6 +127,11 @@ EOF
     sub render($self) {
         # ▶ ▷
         my $lastpos = $self->lastpos->copy;
+        my $shadow_offset = Matrix3::Vec::from_xy(1, -1);
+        $self->renderer->render_quad(
+            $self->pos + $self->bg_topleft + $shadow_offset,
+            $self->shadow_quad,
+        );
         $self->renderer->render_quad($self->pos + $self->bg_topleft, $self->bg_quad);
         $self->renderer->render_geometry($self->pos, $self->geo);
         $self->renderer->render_fmt($self->pos + $self->geo->points->{P}, "pos:     %s", $self->pos);
@@ -147,6 +154,8 @@ EOF
 
     sub erase($self) {
         my $blank = Quad::from_wh($self->bg_quad->width, $self->bg_quad->height, 'DEFAULT_BG');
+        my $shadow_offset = Matrix3::Vec::from_xy(1, -1);
+        $self->renderer->render_quad($self->lastpos + $self->bg_topleft + $shadow_offset, $blank);
         $self->renderer->render_quad($self->lastpos + $self->bg_topleft, $blank);
         $self->renderer->erase_geometry($self->lastpos, $self->geo);
         $self->{lastpos} = $self->pos->copy;
@@ -157,15 +166,15 @@ EOF
 
 package Question {
     my $VIEW = <<'EOF';
-+----------------------------------------------------------------+
-|                               $QUESTION                        |
-|----------------------------------------------------------------|
-|                                                                |
-|                                                                |
-|                        $YES        $NO                         |
-|                                                                |
-|                               $ANS                             |
-|________________________________________________________________|
+┌────────────────────────────────────────────────────────────────┐
+│                               $QUESTION                        │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│                                                                │
+│                        $YES        $NO                         │
+│                                                                │
+│                               $ANS                             │
+└────────────────────────────────────────────────────────────────┘
 EOF
 
     use Utils qw(getters);
@@ -180,6 +189,7 @@ EOF
         renderer
         bg_quad
         bg_topleft
+        shadow_quad
         z
     );
 
@@ -200,6 +210,7 @@ EOF
         my $bg_w = $maxx - $minx + 1;
         my $bg_h = $maxy - $miny + 1;
         my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'QUESTION_BG');
+        my $shadow_quad = Quad::from_wh($bg_w, $bg_h, 'SHADOW_BG');
         my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
         bless {
             focus => "NO",
@@ -209,6 +220,7 @@ EOF
             renderer => $renderer,
             bg_quad => $bg_quad,
             bg_topleft => $bg_topleft,
+            shadow_quad => $shadow_quad,
             question => $question,
             answer => undef,
             z => $z,
@@ -230,6 +242,11 @@ EOF
     
     sub render($self) {
         # $self->renderer->erase_geometry($self->pos, $self->geo);
+        my $shadow_offset = Matrix3::Vec::from_xy(1, -1);
+        $self->renderer->render_quad(
+            $self->pos + $self->bg_topleft + $shadow_offset,
+            $self->shadow_quad,
+        );
         $self->renderer->render_quad($self->pos + $self->bg_topleft, $self->bg_quad);
         $self->renderer->render_geometry($self->pos, $self->geo);
         $self->renderer->render_text(
@@ -252,6 +269,8 @@ EOF
 
     sub erase($self) {
         my $blank = Quad::from_wh($self->bg_quad->width, $self->bg_quad->height, 'DEFAULT_BG');
+        my $shadow_offset = Matrix3::Vec::from_xy(1, -1);
+        $self->renderer->render_quad($self->lastpos + $self->bg_topleft + $shadow_offset, $blank);
         $self->renderer->render_quad($self->lastpos + $self->bg_topleft, $blank);
         $self->renderer->erase_geometry($self->lastpos, $self->geo);
         $self->{lastpos} = $self->pos->copy;
@@ -282,6 +301,9 @@ my $mapper = Material::from_callback(sub ($material) {
     return { -bg => 0x000000 }
         if $material eq 'QUESTION_BG';
 
+    return { -bg => 0x303030 }
+        if $material eq 'SHADOW_BG';
+
     return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 }
         if $material eq 'DEFAULT_BG';
 
@@ -289,8 +311,8 @@ my $mapper = Material::from_callback(sub ($material) {
 });
 
 
-# my $renderer = Renderers::Naive::new($terminal_space);
-my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1, $mapper);
+# my $renderer = Renderers::Naive::new($terminal_space, $mapper, ' ');
+my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1, $mapper, ' ');
 $renderer->initscr();
 
 my $hello_pos = Matrix3::Vec::from_xy(0, -10);
