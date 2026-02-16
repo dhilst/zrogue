@@ -354,6 +354,8 @@ my $terminal_space = Matrix3::translate(($COLS - 1)/2, $ROWS/2)
 my $origin = Matrix3::Vec::from_xy(0, 0);
 my $inp = Input::new();
 my $dt = Time::HiRes::time();
+my $resized = 0;
+local $SIG{WINCH} = sub { $resized = 1; };
 
 my $mapper = Material::from_callback(sub ($material) {
     return { -bg => 0xcccccc } 
@@ -379,15 +381,10 @@ my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1
 $renderer->initscr();
 
 my $hello_pos = Matrix3::Vec::from_xy(0, -10);
-$renderer->render_style($hello_pos, length("Hello world"), -bg => 0x0000ff);
-$renderer->render_text($hello_pos, "Hello world", -fg => 0xff0000, -attrs => ATTR_BOLD);
 my $line_a = Matrix3::Vec::from_xy(-25, 14);
 my $line_b = Matrix3::Vec::from_xy(25, 6);
 my $line_c = Matrix3::Vec::from_xy(-30, -8);
 my $line_d = Matrix3::Vec::from_xy(-5, 12);
-$renderer->render_line($line_a, $line_b, 'MENU_BG');
-$renderer->render_line($line_c, $line_d, 'SHADOW_BG');
-$renderer->flush();
 
 my $question = Question::from_xyz(0, 20, 1, "Hello?", $renderer);
 my $menu = Menu::from_xyz(10, 0, 2, $renderer);
@@ -396,6 +393,13 @@ my @wids = (
     $question,
     $menu,
 );
+
+sub render_static {
+    $renderer->render_style($hello_pos, length("Hello world"), -bg => 0x0000ff);
+    $renderer->render_text($hello_pos, "Hello world", -fg => 0xff0000, -attrs => ATTR_BOLD);
+    $renderer->render_line($line_a, $line_b, 'MENU_BG');
+    $renderer->render_line($line_c, $line_d, 'SHADOW_BG');
+}
 
 sub wids {
     sort { $b->{z} <=> $a->{z} } @wids;
@@ -410,10 +414,29 @@ sub erase_all {
     $_->erase() for @wids;
 }
 
+sub handle_resize {
+    $resized = 0;
+    $COLS = $term->cols;
+    $ROWS = $term->rows;
+    $terminal_space = Matrix3::translate(($COLS - 1)/2, $ROWS/2)
+                ->mul_mat_inplace($REFLECT_X);
+    $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1, $mapper, ' ');
+    $renderer->initscr();
+    $_->{renderer} = $renderer for @wids;
+    $_->{lastpos} = $_->{pos}->copy for @wids;
+    render_static();
+    render_all();
+}
+
+render_static();
 render_all();
 OUT:
 while (1) {
     my @events = $inp->poll(3);
+    if ($resized) {
+        handle_resize();
+        next;
+    }
     my $z_changed = 0;
     for my $event (@events) {
         if ($event->type eq Event::Type::KEY_PRESS
