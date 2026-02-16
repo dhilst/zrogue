@@ -398,8 +398,21 @@ package Renderers::DoubleBuffering {
     }
 
     sub initscr($self) {
-        $self->term->initscr($self->blank);
-        $self->flush();
+        my $mapper = $self->mapper;
+        my $style = $mapper->('DEFAULT');
+        confess "Invalid material DEFAULT" if !defined $style;
+        confess "style must be a hashref" unless ref($style) eq 'HASH';
+
+        my $fg = exists $style->{-fg} ? ($style->{-fg} // -1) : -1;
+        my $bg = exists $style->{-bg} ? ($style->{-bg} // -1) : -1;
+        my $attrs = exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1;
+
+        my $cols = $self->width;
+        my $rows = $self->height;
+        my $line = $self->blank x $cols;
+        for my $row (0 .. $rows - 1) {
+            $self->term->write_color($line, 0, $row, $fg, $bg, $attrs);
+        }
     }
 
     sub render_geometry($self, $pos_vec, $geo) {

@@ -295,7 +295,7 @@ my $mapper = Material::from_callback(sub ($material) {
     return { -bg => 0xcccccc } 
         if $material eq 'STEEL';
 
-    return { -bg => 0x0000ff }
+    return { -bg => 0xaa00aa, -attrs => ATTR_BOLD }
         if $material eq 'MENU_BG';
 
     return { -bg => 0x000000 }
@@ -305,11 +305,10 @@ my $mapper = Material::from_callback(sub ($material) {
         if $material eq 'SHADOW_BG';
 
     return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 }
-        if $material eq 'DEFAULT_BG';
+        if $material eq 'DEFAULT';
 
     return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 };
 });
-
 
 # my $renderer = Renderers::Naive::new($terminal_space, $mapper, ' ');
 my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1, $mapper, ' ');
