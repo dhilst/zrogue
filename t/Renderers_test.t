@@ -119,6 +119,7 @@ subtest 'bounds checking and exceptions' => sub {
                                                    'set_multi overflow dies';
     lives_ok { $back->get_multi(3, 0, 1) }      'get_multi single lives';
     dies_ok  { $back->get_multi(3, 0, 2) }      'get_multi overflow dies';
+    dies_ok  { $back->set_multi(0, 0) }         'set_multi zero-length dies';
 };
 
 subtest 'partial updates works as expected' => sub {
@@ -143,13 +144,45 @@ subtest 'partial updates works as expected' => sub {
 
 subtest 'clip works as expected' => sub {
     my $H = 3, my $W = 4;
-    my $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0]);
+    my $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
 
     is_deeply([ $back->clip( 0,  0,    1  ) ], [   0  ,    0  ,    1  ],  "no cliping = nop");
-    is_deeply([ $back->clip(-1,  0,    1  ) ], [   0  ,    0  ,    1  ],  "negative col clipping");
+    is_deeply([ $back->clip(-1,  0,    1  ) ], [   0  ,    0  ,    0  ],  "negative col offscreen");
+    is_deeply([ $back->clip(-1,  0,    2  ) ], [   0  ,    0  ,    1  ],  "negative col clipping");
     is_deeply([ $back->clip( 0,  0, $W + 1) ], [   0  ,    0  ,   $W  ],  "positive col clipping");
-    is_deeply([ $back->clip( 0, -1,    1  ) ], [   0  ,    0  ,    1  ],  "negative row clipping");
-    is_deeply([ $back->clip( 0, $H,    1  ) ], [   0  , $H - 1,    1  ],  "positive row clipping");
+    is_deeply([ $back->clip( 0, -1,    1  ) ], [   0  ,    0  ,    0  ],  "negative row offscreen");
+    is_deeply([ $back->clip( 0, $H,    1  ) ], [   0  , $H - 1,    0  ],  "positive row offscreen");
+
+    $back->set_multi(-1, 0, [1,1,1],[2,2,2]);
+    is_deeply([ $back->get(0, 0) ], [2,2,2], "offscreen writes are discarted");
+};
+
+subtest 'autoclip off-screen writes are ignored' => sub {
+    my $H = 3, my $W = 4;
+
+    my $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back->set(-1, 0, [1,1,1]);
+    is_deeply([ $back->get(0, 0) ], [0,0,0], "offscreen left single ignored");
+
+    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back->set($W, 0, [1,1,1]);
+    is_deeply([ $back->get($W - 1, 0) ], [0,0,0], "offscreen right single ignored");
+
+    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back->set(0, -1, [1,1,1]);
+    is_deeply([ $back->get(0, 0) ], [0,0,0], "offscreen row above ignored");
+
+    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back->set(0, $H, [1,1,1]);
+    is_deeply([ $back->get(0, $H - 1) ], [0,0,0], "offscreen row below ignored");
+
+    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back->set_multi($W - 1, 0, [3,3,3], [4,4,4]);
+    is_deeply([ $back->get($W - 1, 0) ], [3,3,3], "right edge clip keeps visible");
+
+    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back->set_multi(-3, 0, [5,5,5], [6,6,6]);
+    is_deeply([ $back->get(0, 0) ], [0,0,0], "fully offscreen left ignored");
 };
 
 done_testing;

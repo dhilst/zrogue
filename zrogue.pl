@@ -17,6 +17,7 @@ use lib "$Bin";
 use Termlib;
 use Matrix3 qw($REFLECT_X $EAST $WEST $SOUTH $NORTH);
 use Geometry3;
+use Geometry4;
 use Views;
 use Viewport;
 use Input;
@@ -106,10 +107,6 @@ EOF
     sub render($self) {
         # ▶ ▷
         my $lastpos = $self->lastpos->copy;
-        if ($self->lastpos ne $self->pos) {
-            $self->renderer->erase_geometry($self->lastpos, $self->geo, '.');
-            $self->{lastpos} = $self->pos->copy;
-        }
         $self->renderer->render_geometry($self->pos, $self->geo);
         $self->renderer->render_fmt($self->pos + $self->geo->points->{P}, "pos:     %s", $self->pos);
         $self->renderer->render_fmt($self->pos + $self->geo->points->{L}, "lastpos: %s", $lastpos);
@@ -127,6 +124,11 @@ EOF
         }
         $self->renderer->render_text($self->pos + $self->geo->points->{T}, POSIX::strftime("%H:%M:%S", localtime),
             -justify => 'right');
+    }
+
+    sub erase($self) {
+        $self->renderer->erase_geometry($self->lastpos, $self->geo);
+        $self->{lastpos} = $self->pos->copy;
     }
 
 
@@ -206,6 +208,10 @@ EOF
         }
     }
 
+    sub erase($self) {
+        $self->renderer->erase_geometry($self->pos, $self->geo);
+    }
+
 }
 
 my $term = Termlib::new();
@@ -226,10 +232,11 @@ my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1
 $renderer->initscr();
 
 my $question = Question::from_xyz(0, 20, 1, "Hello?", $renderer);
+my $menu = Menu::from_xyz(10, 0, 2, $renderer);
 
 my @wids = (
     $question,
-    Menu::from_xyz(10, 0, 2, $renderer),
+    $menu,
 );
 
 sub wids {
@@ -245,10 +252,20 @@ sub render_all {
     $renderer->flush();
 }
 
+sub erase_all {
+    $_->erase() for @wids;
+}
+
 render_all();
 while (1) {
     my @events = $inp->poll(1);
+    for my $event (@events) {
+        if ($event->type eq Event::Type::KEY_PRESS
+            && $event->payload->char eq 's') {
+            ($menu->{z}, $question->{z}) = ($question->z, $menu->z);
+        }
+    }
     update_all(1/60, @events);
+    erase_all();
     render_all();
 }
-
