@@ -22,6 +22,22 @@ package Renderers::Naive {
 
     sub initscr($self) {
         $self->term->initscr($self->blank);
+        my $mapper = $self->mapper;
+        return unless defined $mapper;
+        my $style = $mapper->('DEFAULT_BG');
+        confess "Invalid material DEFAULT_BG" if !defined $style;
+        confess "style must be a hashref" unless ref($style) eq 'HASH';
+
+        my $fg = exists $style->{-fg} ? ($style->{-fg} // -1) : -1;
+        my $bg = exists $style->{-bg} ? ($style->{-bg} // -1) : -1;
+        my $attrs = exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1;
+
+        my $cols = Termlib::cols() - 1;
+        my $rows = Termlib::rows();
+        my $line = $self->blank x $cols;
+        for my $row (0 .. $rows - 1) {
+            $self->term->write_color($line, 0, $row, $fg, $bg, $attrs);
+        }
     }
 
     sub render_geometry($self, $at_vec, $geo) {
@@ -372,6 +388,22 @@ package Renderers::DoubleBuffering {
 
     sub initscr($self) {
         $self->term->initscr($self->blank);
+        my $mapper = $self->mapper;
+        return unless defined $mapper;
+        my $style = $mapper->('DEFAULT_BG');
+        confess "Invalid material DEFAULT_BG" if !defined $style;
+        confess "style must be a hashref" unless ref($style) eq 'HASH';
+
+        my $fg = exists $style->{-fg} ? ($style->{-fg} // -1) : -1;
+        my $bg = exists $style->{-bg} ? ($style->{-bg} // -1) : -1;
+        my $attrs = exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1;
+
+        my $payload = pack($self->packstr, ord($self->blank), $fg, $bg, $attrs);
+        $self->{bbuf}->{buf} = $payload x ($self->width * $self->height);
+        $self->{bbuf}->{_updated_rows} = { map { $_ => 1 } 0 .. $self->height - 1 };
+        $self->{fbuf}->{buf} = $self->{fbuf}->{zeroed};
+        $self->{fbuf}->{_updated_rows} = { map { $_ => 1 } 0 .. $self->height - 1 };
+        $self->flush();
     }
 
     sub render_geometry($self, $pos_vec, $geo) {
