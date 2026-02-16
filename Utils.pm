@@ -45,6 +45,10 @@ package Utils::Array {
         }
         @out;
     }
+
+    sub flatten(@values) {
+        map { $_->@* } @values;
+    }
 }
 
 1;

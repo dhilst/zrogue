@@ -79,18 +79,20 @@ package Renderers::Buffer2D {
         bsize
         buf
         defaults
+        opts
         packstr
         size
         stride
         zeroed
     );
 
-    sub new($packstr, $H, $W, $defaults) {
+    sub new($packstr, $H, $W, $defaults, %opts) {
         my $stride = length(pack($packstr));
         my $size = $W * $H;
         my $bsize = $size * $stride;
         my $buf = pack($packstr, $defaults->@*) x $size;
         my $zeroed = $buf;
+        $opts{-autoclip} //= 0;
         bless {
             H => $H,
             W => $W,
@@ -98,6 +100,7 @@ package Renderers::Buffer2D {
             bsize => $bsize,
             buf => $buf,
             defaults => $defaults,
+            opts => \%opts,
             packstr => $packstr,
             size => $size,
             stride => $stride,
@@ -121,6 +124,7 @@ package Renderers::Buffer2D {
             buf => $other->buf,                 # string (Cow)
             defaults => [$other->defaults->@*], # array ref
             packstr => $other->packstr,         # string (CoW)
+            opts => { $other->opts->%* },
             size => $other->size,               # int
             stride => $other->stride,           # int
             zeroed => $other->zeroed,
@@ -131,44 +135,80 @@ package Renderers::Buffer2D {
         Renderers::Buffer2D::from_other($self);
     }
 
-    sub valid($self, $col, $row) {
+    sub valid($self, $col, $row, $length = 1) {
+        my $colend = $col + $length - 1;
         0 <= $col && $col < $self->W
+            && 0 <= $colend && $colend < $self->W
             && 0 <= $row && $row < $self->H;
     }
 
+    sub clip($self, $col, $row, $length) {
+        use List::Util qw(min max);
+
+        my $newcol =
+            0 <= $col && $col < $self->W
+            ? $col
+            : max(min($col, $self->W - 1), 0);
+        my $newrow =
+            0 <= $row && $row < $self->H
+            ? $row
+            : max(min($row, $self->H - 1), 0);
+        my $colend = $col + $length - 1;
+        $colend =
+            0 <= $colend && $colend < $self->W
+            ? $colend
+            : max(min($colend, $self->W - 1), 0);
+        my $newlength = $colend - $newcol + 1;
+        ($newcol, $newrow, $newlength);
+    }
+
+    sub index_unchecked($self, $col, $row) {
+        (($row * $self->W) + $col) * $self->stride;
+    }
+
+    sub index($self, $col, $row, $length) {
+        if ($self->opts->{-autoclip}) {
+            my ($ccol, $crow, $clength) = $self->clip($col, $row, $length);
+            return ($self->index_unchecked($ccol, $crow), $clength * $self->stride);
+        } else {
+            confess "invalid access" 
+                unless $self->valid($col, $row, $length);
+            return ($self->index_unchecked($col, $row), $length * $self->stride);
+        }
+    }
+
     sub getp($self, $col, $row) {
-        confess "invalid access" unless $self->valid($col, $row);
-        my $idx = ($row * $self->W + $col) * $self->stride;
-        substr($self->buf, $idx, $self->stride);
+        my ($idx, $length) = $self->index($col, $row, 1);
+        substr($self->buf, $idx, $length);
     }
 
     sub get($self, $col, $row) {
-        confess "invalid access" unless $self->valid($col, $row);
-        my $idx = ($row * $self->W + $col) * $self->stride;
-        unpack($self->packstr, substr($self->buf, $idx, $self->stride));
+        my ($idx, $length) = $self->index($col, $row, 1);
+        unpack($self->packstr, substr($self->buf, $idx, $length));
     }
 
     sub setp($self, $col, $row, $payload) {
-        confess "invalid access" unless $self->valid($col, $row);
         $self->{_updated_rows}->{$row}++;
-        my $idx = ($row * $self->W + $col) * $self->stride;
-        substr($self->{buf}, $idx, $self->stride) = $payload;
+        my ($idx, $length) = $self->index($col, $row, 1);
+        substr($self->{buf}, $idx, $length) = $payload;
+        $self->{_updated_rows}->{$row}++;
     }
 
+
     sub set($self, $col, $row, $values) {
-        confess "invalid access" unless $self->valid($col, $row);
-        my $idx = ($row * $self->W + $col) * $self->stride;
-        substr($self->{buf}, $idx, $self->stride) = pack($self->packstr, $values->@*);
+        my ($idx, $length) = $self->index($col, $row, 1);
+        substr($self->{buf}, $idx, $length) = pack($self->packstr, $values->@*);
         $self->{_updated_rows}->{$row}++;
+    }
+
+    sub update($self, $col, $row, $values) {
+        $self->update_multi($col, $row, $values);
     }
 
     sub get_multi($self, $col, $row, $n) {
-        confess "invalid access" unless
-            $self->valid($col, $row) &&
-            $self->valid($col + $n - 1, $row);
         my $stride = $self->stride;
-        my $idx = ($row * $self->W + $col) * $stride;
-        my $payloads = substr($self->{buf}, $idx, $n * $stride);
+        my ($idx, $length) = $self->index($col, $row, $n);
+        my $payloads = substr($self->{buf}, $idx, $length);
         my @values;
         for (0 .. $n - 1) {
             my $payload = substr($payloads, $_ * $stride);
@@ -179,14 +219,26 @@ package Renderers::Buffer2D {
     }
 
     sub set_multi($self, $col, $row, @values) {
-        confess "invalid access" unless
-            $self->valid($col, $row) &&
-            $self->valid($col + $#values, $row);
+        confess "undef in payload" if
+            grep { !defined } map { $_->@* } @values;
         my $stride = $self->stride;
         my $payload = pack(sprintf("(%s)*", $self->packstr), map { $_->@* } @values);
-        my $idx = ($row * $self->W + $col) * $stride;
-        substr($self->{buf}, $idx, (scalar @values) * $stride) = $payload;
+        my ($idx, $length) = $self->index($col, $row, scalar @values);
+        substr($self->{buf}, $idx, $length) = $payload;
         $self->{_updated_rows}->{$row}++;
+    }
+
+    sub update_multi($self, $col, $row, @values) {
+        use Data::Dumper;
+        my $stride = $self->stride;
+        my @payload = $self->get_multi($col, $row, scalar @values);
+        for (my $i = 0; $i < @values; $i++) {
+            for (my $j = 0; $j < $values[$i]->@*; $j++) {
+                $payload[$i][$j] = $values[$i][$j]
+                    if defined $values[$i][$j];
+            }
+        }
+        $self->set_multi($col, $row, @payload);
     }
 
     sub xor_inplace($self, $other) {
@@ -274,8 +326,8 @@ package Renderers::DoubleBuffering {
     sub new($terminal_space, $H, $W, $blank = '.') {
         my $packstr = "l4";
         my @default = (ord($blank), -1, -1, -1);
-        my $bbuf = Renderers::Buffer2D::new($packstr, $H, $W, \@default);
-        my $fbuf = Renderers::Buffer2D::new($packstr, $H, $W, \@default);
+        my $bbuf = Renderers::Buffer2D::new($packstr, $H, $W, \@default, -autoclip => 1);
+        my $fbuf = Renderers::Buffer2D::new($packstr, $H, $W, \@default, -autoclip => 1);
         bless {
             bbuf => $bbuf,
             fbuf => $fbuf,
