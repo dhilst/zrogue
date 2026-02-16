@@ -215,6 +215,11 @@ package Renderers::Buffer2D {
         substr($self->buf, $idx, $length);
     }
 
+    sub getp_unchecked($self, $col, $row) {
+        my $idx = $self->index_unchecked($col, $row);
+        substr($self->buf, $idx, $self->stride);
+    }
+
     sub get($self, $col, $row) {
         my ($idx, $length) = $self->index($col, $row, 1);
         return if !$length;
@@ -256,6 +261,20 @@ package Renderers::Buffer2D {
         @values;
     }
 
+    sub get_multi_unchecked($self, $col, $row, $n) {
+        my $stride = $self->stride;
+        my $idx = $self->index_unchecked($col, $row);
+        my $length = $n * $stride;
+        my $payloads = substr($self->{buf}, $idx, $length);
+        my @values;
+        for (0 .. $n - 1) {
+            my $payload = substr($payloads, $_ * $stride);
+            push @values, [ unpack($self->packstr, $payload) ];
+        }
+
+        @values;
+    }
+
     sub set_multi($self, $col, $row, @values) {
         my $stride = $self->stride;
         my ($idx, $length, $skip) = $self->index($col, $row, scalar @values);
@@ -269,19 +288,46 @@ package Renderers::Buffer2D {
         $self->{_updated_rows}->{$row}++;
     }
 
-    sub update_multi($self, $col, $row, @values) {
-        use Data::Dumper;
+    sub set_multi_unchecked($self, $col, $row, @values) {
         my $stride = $self->stride;
-        my ($idx, $length, $skip) = $self->index($col, $row, scalar @values);
+        my $idx = $self->index_unchecked($col, $row);
+        my $length = scalar(@values) * $stride;
+        confess "undef in payload" if
+            grep { !defined } map { $_->@* } @values;
+        my $payload = pack(sprintf("(%s)*", $self->packstr), map { $_->@* } @values);
+        substr($self->{buf}, $idx, $length) = $payload;
+        $self->{_updated_rows}->{$row}++;
+    }
+
+    sub _merge_payload($payload, $values, $offset, $count) {
+        for (my $i = 0; $i < $count; $i++) {
+            my $src = $values->[$offset + $i];
+            for (my $j = 0; $j < $src->@*; $j++) {
+                $payload->[$i][$j] = $src->[$j]
+                    if defined $src->[$j];
+            }
+        }
+    }
+
+    sub update_multi($self, $col, $row, @values) {
+        my $n = scalar @values;
+        return if $n <= 0;
+        my $valid = $self->valid($col, $row, $n);
+        if ($valid) {
+            my @payload = $self->get_multi_unchecked($col, $row, $n);
+            _merge_payload(\@payload, \@values, 0, $n);
+            $self->set_multi_unchecked($col, $row, @payload);
+            return;
+        }
+
+        confess "invalid access" if $self->opts->{-autoclip} == 0;
+
+        my $stride = $self->stride;
+        my ($idx, $length, $skip) = $self->index($col, $row, $n);
         return if !$length;
         my $count = $length / $stride;
         my @payload = $self->get_multi($col + $skip, $row, $count);
-        for (my $i = 0; $i < $count; $i++) {
-            for (my $j = 0; $j < $values[$skip + $i]->@*; $j++) {
-                $payload[$i][$j] = $values[$skip + $i][$j]
-                    if defined $values[$skip + $i][$j];
-            }
-        }
+        _merge_payload(\@payload, \@values, $skip, $count);
         $self->set_multi($col + $skip, $row, @payload);
     }
 
@@ -294,30 +340,38 @@ package Renderers::Buffer2D {
         $delta->xor_inplace($other);
         my @indexes;
         my $zero = "\0" x $delta->stride;
+        my $stride = $self->stride;
+        my $row_stride = $self->{W} * $stride;
+        my $pack_template = sprintf("(%s)*", $self->packstr);
         for my $row (sort { $a <=> $b } keys $self->{_updated_rows}->%*) {
-            for my $col(0 .. $self->{W} - 1) {
-                my $pack = $delta->getp($col, $row);
-                confess if !defined $pack;
-                if ($pack ne $zero) {
-                    my $payload = $self->getp($col, $row);
-                    my $last = $indexes[$#indexes];
-
-                    if (defined $last && $last->{row} == $row 
-                        && $last->{col} + $last->{size} == $col
-                    ) {
-                        push $last->{payload}->@*, unpack($self->packstr, $payload);
-                        $last->{size}++;
-                        next;
-                    }
-
-                    my @payload = unpack($self->packstr, $payload);
-                    push @indexes, { 
-                        col => $col, 
-                        row => $row, 
-                        payload => \@payload,
-                        size => 1,
-                    };
+            next if $row < 0 || $row >= $self->{H};
+            my $row_base = $row * $row_stride;
+            my $col = 0;
+            while ($col < $self->{W}) {
+                my $idx = $row_base + $col * $stride;
+                my $pack = substr($delta->{buf}, $idx, $stride);
+                if ($pack eq $zero) {
+                    $col++;
+                    next;
                 }
+
+                my $start = $col;
+                $col++;
+                while ($col < $self->{W}) {
+                    $idx = $row_base + $col * $stride;
+                    $pack = substr($delta->{buf}, $idx, $stride);
+                    last if $pack eq $zero;
+                    $col++;
+                }
+                my $size = $col - $start;
+                my $payload_bytes = substr($self->{buf}, $row_base + $start * $stride, $size * $stride);
+                my @payload = unpack($pack_template, $payload_bytes);
+                push @indexes, {
+                    col => $start,
+                    row => $row,
+                    payload => \@payload,
+                    size => $size,
+                };
             }
         }
         $self->{_updated_rows} = {};
