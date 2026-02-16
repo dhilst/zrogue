@@ -72,6 +72,33 @@ package Renderers::Naive {
             $self->mapper($quad->material)->%*);
     }
 
+    sub render_line($self, $pos_start, $pos_end, $material) {
+        my ($x0, $y0) = $pos_start->@*;
+        my ($x1, $y1) = $pos_end->@*;
+        my %opts = $self->mapper($material)->%*;
+        my $glyph = $self->{blank};
+
+        my $dx = abs($x1 - $x0);
+        my $sx = $x0 < $x1 ? 1 : -1;
+        my $dy = -abs($y1 - $y0);
+        my $sy = $y0 < $y1 ? 1 : -1;
+        my $err = $dx + $dy;
+
+        while (1) {
+            $self->render_text(Matrix3::Vec::from_xy($x0, $y0), $glyph, %opts);
+            last if $x0 == $x1 && $y0 == $y1;
+            my $e2 = 2 * $err;
+            if ($e2 >= $dy) {
+                $err += $dy;
+                $x0 += $sx;
+            }
+            if ($e2 <= $dx) {
+                $err += $dx;
+                $y0 += $sy;
+            }
+        }
+    }
+
     sub render_text($self, $at_vec, $text, %opts) {
         $opts{-justify} //= 'left';
         if ($opts{-justify} eq 'center') {
@@ -530,6 +557,33 @@ package Renderers::DoubleBuffering {
     sub render_quad($self, $pos_vec, $quad) {
         $self->_render_quad($pos_vec, $quad->height, $quad->width,
             $self->mapper->style($quad->material)->%*);
+    }
+
+    sub render_line($self, $pos_start, $pos_end, $material) {
+        my ($x0, $y0) = $pos_start->@*;
+        my ($x1, $y1) = $pos_end->@*;
+        my %opts = $self->mapper->style($material)->%*;
+        my $glyph = $self->{blank};
+
+        my $dx = abs($x1 - $x0);
+        my $sx = $x0 < $x1 ? 1 : -1;
+        my $dy = -abs($y1 - $y0);
+        my $sy = $y0 < $y1 ? 1 : -1;
+        my $err = $dx + $dy;
+
+        while (1) {
+            $self->render_text(Matrix3::Vec::from_xy($x0, $y0), $glyph, %opts);
+            last if $x0 == $x1 && $y0 == $y1;
+            my $e2 = 2 * $err;
+            if ($e2 >= $dy) {
+                $err += $dy;
+                $x0 += $sx;
+            }
+            if ($e2 <= $dx) {
+                $err += $dx;
+                $y0 += $sy;
+            }
+        }
     }
 
     sub render_fmt($self, $pos_vec, $fmt, @args) {

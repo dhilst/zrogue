@@ -56,7 +56,7 @@ EOF
         D => 'MENU3',
     );
 
-    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft shadow_quad);
+    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft);
 
     sub from_xyz(
         $x, $y, $z,
@@ -85,53 +85,91 @@ EOF
         my $bg_w = $maxx - $minx + 1;
         my $bg_h = $maxy - $miny + 1;
         my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'MENU_BG');
-        my $shadow_quad = Quad::from_wh($bg_w, $bg_h, 'SHADOW_BG');
         my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
         bless {
             focus => undef,
             status => undef,
+            time => POSIX::strftime("%H:%M:%S", localtime),
             geo => $geo,
             pos => $pos,
             lastpos => $pos->copy,
             renderer => $renderer,
             bg_quad => $bg_quad,
             bg_topleft => $bg_topleft,
-            shadow_quad => $shadow_quad,
             z => $z,
         }, __PACKAGE__;
     }
 
-    sub update($self, $dt, @events) {
+    sub _render_shadow_at($self, $pos, $material) {
+        my $top_left = $pos + $self->bg_topleft;
+        my ($x0, $y0) = $top_left->@*;
+        my $w = $self->bg_quad->width;
+        my $h = $self->bg_quad->height;
+
+        my $right_x = $x0 + $w;
+        my $right_top = $y0 - 1;
+        my $right_bottom = $y0 - $h;
+        $self->renderer->render_line(
+            Matrix3::Vec::from_xy($right_x, $right_top),
+            Matrix3::Vec::from_xy($right_x, $right_bottom),
+            $material,
+        );
+
+        return if $w < 2;
+        my $bottom_y = $y0 - $h;
+        my $bottom_left = $x0 + 1;
+        my $bottom_right = $x0 + $w - 1;
+        $self->renderer->render_line(
+            Matrix3::Vec::from_xy($bottom_left, $bottom_y),
+            Matrix3::Vec::from_xy($bottom_right, $bottom_y),
+            $material,
+        );
+    }
+
+    sub update($self, @events) {
+        my $changed = 0;
         my $idx = Utils::Array::index_of($self->{focus} // 'D', @CYCLES);
         for my $event (@events) {
             my $char = $event->payload->char;
             if ($char eq 'k') {
                 $self->{focus} = $CYCLES[--$idx % @CYCLES];
+                $changed = 1;
             } elsif ($char eq 'j') {
                 $self->{focus} = $CYCLES[++$idx % @CYCLES];
+                $changed = 1;
             } elsif ($char eq 'K') {
                 $self->{pos} *= $NORTH;
+                $changed = 1;
             } elsif ($char eq 'J') {
                 $self->{pos} *= $SOUTH;
+                $changed = 1;
             } elsif ($char eq 'H') {
                 $self->{pos} *= $WEST;
+                $changed = 1;
             } elsif ($char eq 'L') {
                 $self->{pos} *= $EAST;
+                $changed = 1;
             } elsif ($event->payload->code eq 0x0a && defined $self->focus) {
-                $self->{status} = sprintf "%s selected", $NAMES{$self->{focus}};
+                my $status = sprintf "%s selected", $NAMES{$self->{focus}};
+                if (!defined $self->{status} || $self->{status} ne $status) {
+                    $self->{status} = $status;
+                    $changed = 1;
+                }
             }
         }
 
+        my $now = POSIX::strftime("%H:%M:%S", localtime);
+        if (!defined $self->{time} || $self->{time} ne $now) {
+            $self->{time} = $now;
+            $changed = 1;
+        }
+        $changed;
     }
 
     sub render($self) {
         # ▶ ▷
         my $lastpos = $self->lastpos->copy;
-        my $shadow_offset = Matrix3::Vec::from_xy(1, -1);
-        $self->renderer->render_quad(
-            $self->pos + $self->bg_topleft + $shadow_offset,
-            $self->shadow_quad,
-        );
+        $self->_render_shadow_at($self->pos, 'SHADOW_BG');
         $self->renderer->render_quad($self->pos + $self->bg_topleft, $self->bg_quad);
         $self->renderer->render_geometry($self->pos, $self->geo);
         $self->renderer->render_fmt($self->pos + $self->geo->points->{P}, "pos:     %s", $self->pos);
@@ -148,14 +186,14 @@ EOF
         if (defined $self->{status}) {
             $self->renderer->render_text($self->pos + $self->geo->points->{R}, $self->{status})
         }
-        $self->renderer->render_text($self->pos + $self->geo->points->{T}, POSIX::strftime("%H:%M:%S", localtime),
+        my $time = $self->{time} // POSIX::strftime("%H:%M:%S", localtime);
+        $self->renderer->render_text($self->pos + $self->geo->points->{T}, $time,
             -justify => 'right');
     }
 
     sub erase($self) {
         my $blank = Quad::from_wh($self->bg_quad->width, $self->bg_quad->height, 'DEFAULT_BG');
-        my $shadow_offset = Matrix3::Vec::from_xy(1, -1);
-        $self->renderer->render_quad($self->lastpos + $self->bg_topleft + $shadow_offset, $blank);
+        $self->_render_shadow_at($self->lastpos, 'DEFAULT_BG');
         $self->renderer->render_quad($self->lastpos + $self->bg_topleft, $blank);
         $self->renderer->erase_geometry($self->lastpos, $self->geo);
         $self->{lastpos} = $self->pos->copy;
@@ -189,7 +227,6 @@ EOF
         renderer
         bg_quad
         bg_topleft
-        shadow_quad
         z
     );
 
@@ -210,7 +247,6 @@ EOF
         my $bg_w = $maxx - $minx + 1;
         my $bg_h = $maxy - $miny + 1;
         my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'QUESTION_BG');
-        my $shadow_quad = Quad::from_wh($bg_w, $bg_h, 'SHADOW_BG');
         my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
         bless {
             focus => "NO",
@@ -220,33 +256,51 @@ EOF
             renderer => $renderer,
             bg_quad => $bg_quad,
             bg_topleft => $bg_topleft,
-            shadow_quad => $shadow_quad,
             question => $question,
             answer => undef,
             z => $z,
         }, __PACKAGE__;
     }
 
-    sub update($self, $dt, @events) {
+    sub update($self, @events) {
+        my $changed = 0;
         for my $event (@events) {
             my $char = $event->payload->char;
             if ($char eq "h") {
-                $self->{focus} = "YES";
+                if ($self->{focus} ne "YES") {
+                    $self->{focus} = "YES";
+                    $changed = 1;
+                }
             } elsif ($char eq "l") {
-                $self->{focus} = "NO";
+                if ($self->{focus} ne "NO") {
+                    $self->{focus} = "NO";
+                    $changed = 1;
+                }
             } elsif ($event->payload->code == 0x0a) {
-                $self->{answer} = sprintf "%3s", $self->focus;
+                my $answer = sprintf "%3s", $self->focus;
+                if (!defined $self->{answer} || $self->{answer} ne $answer) {
+                    $self->{answer} = $answer;
+                    $changed = 1;
+                }
             }
         }
+        $changed;
     }
     
     sub render($self) {
         # $self->renderer->erase_geometry($self->pos, $self->geo);
-        my $shadow_offset = Matrix3::Vec::from_xy(1, -1);
-        $self->renderer->render_quad(
-            $self->pos + $self->bg_topleft + $shadow_offset,
-            $self->shadow_quad,
+        $self->renderer->render_line(
+            $self->pos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width, -1),
+            $self->pos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width, -$self->bg_quad->height),
+            'SHADOW_BG',
         );
+        if ($self->bg_quad->width > 1) {
+            $self->renderer->render_line(
+                $self->pos + $self->bg_topleft + Matrix3::Vec::from_xy(1, -$self->bg_quad->height),
+                $self->pos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width - 1, -$self->bg_quad->height),
+                'SHADOW_BG',
+            );
+        }
         $self->renderer->render_quad($self->pos + $self->bg_topleft, $self->bg_quad);
         $self->renderer->render_geometry($self->pos, $self->geo);
         $self->renderer->render_text(
@@ -269,8 +323,18 @@ EOF
 
     sub erase($self) {
         my $blank = Quad::from_wh($self->bg_quad->width, $self->bg_quad->height, 'DEFAULT_BG');
-        my $shadow_offset = Matrix3::Vec::from_xy(1, -1);
-        $self->renderer->render_quad($self->lastpos + $self->bg_topleft + $shadow_offset, $blank);
+        $self->renderer->render_line(
+            $self->lastpos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width, -1),
+            $self->lastpos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width, -$self->bg_quad->height),
+            'DEFAULT_BG',
+        );
+        if ($self->bg_quad->width > 1) {
+            $self->renderer->render_line(
+                $self->lastpos + $self->bg_topleft + Matrix3::Vec::from_xy(1, -$self->bg_quad->height),
+                $self->lastpos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width - 1, -$self->bg_quad->height),
+                'DEFAULT_BG',
+            );
+        }
         $self->renderer->render_quad($self->lastpos + $self->bg_topleft, $blank);
         $self->renderer->erase_geometry($self->lastpos, $self->geo);
         $self->{lastpos} = $self->pos->copy;
@@ -317,6 +381,12 @@ $renderer->initscr();
 my $hello_pos = Matrix3::Vec::from_xy(0, -10);
 $renderer->render_style($hello_pos, length("Hello world"), -bg => 0x0000ff);
 $renderer->render_text($hello_pos, "Hello world", -fg => 0xff0000, -attrs => ATTR_BOLD);
+my $line_a = Matrix3::Vec::from_xy(-25, 14);
+my $line_b = Matrix3::Vec::from_xy(25, 6);
+my $line_c = Matrix3::Vec::from_xy(-30, -8);
+my $line_d = Matrix3::Vec::from_xy(-5, 12);
+$renderer->render_line($line_a, $line_b, 'MENU_BG');
+$renderer->render_line($line_c, $line_d, 'SHADOW_BG');
 $renderer->flush();
 
 my $question = Question::from_xyz(0, 20, 1, "Hello?", $renderer);
@@ -331,10 +401,6 @@ sub wids {
     sort { $b->{z} <=> $a->{z} } @wids;
 }
 
-sub update_all($dt, @events) {
-    $_->update($dt, @events) for @wids;
-}
-
 sub render_all {
     $_->render() for wids;
     $renderer->flush();
@@ -347,7 +413,8 @@ sub erase_all {
 render_all();
 OUT:
 while (1) {
-    my @events = $inp->poll(1);
+    my @events = $inp->poll(3);
+    my $z_changed = 0;
     for my $event (@events) {
         if ($event->type eq Event::Type::KEY_PRESS
             && $event->payload->code eq Event::KeyCode::ESC) {
@@ -355,9 +422,19 @@ while (1) {
         } elsif ($event->type eq Event::Type::KEY_PRESS
             && $event->payload->char eq 's') {
             ($menu->{z}, $question->{z}) = ($question->z, $menu->z);
+            $z_changed = 1;
         }
     }
-    update_all(1/60, @events);
-    erase_all();
-    render_all();
+    my @changed = grep { $_->update(@events) } @wids;
+    if ($z_changed) {
+        erase_all();
+        render_all();
+        next;
+    }
+    if (@changed) {
+        $_->erase() for @changed;
+        my %changed = map { $_ => 1 } @changed;
+        $_->render() for grep { $changed{$_} } wids;
+        $renderer->flush();
+    }
 }
