@@ -345,10 +345,14 @@ sub erase_all {
 }
 
 render_all();
+OUT:
 while (1) {
     my @events = $inp->poll(1);
     for my $event (@events) {
         if ($event->type eq Event::Type::KEY_PRESS
+            && $event->payload->code eq Event::KeyCode::ESC) {
+            last OUT;
+        } elsif ($event->type eq Event::Type::KEY_PRESS
             && $event->payload->char eq 's') {
             ($menu->{z}, $question->{z}) = ($question->z, $menu->z);
         }

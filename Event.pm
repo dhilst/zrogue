@@ -12,7 +12,8 @@ package Event::Type {
 
 package Event::KeyCode {
     use constant {
-        ENTER => 10
+        ENTER => 10,
+        ESC   => 27,
     };
 }
 
