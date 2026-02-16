@@ -39,6 +39,10 @@ package Renderers::Naive {
         }
     }
 
+    sub render_style($self, $pos_vec, $length, %opts) {
+        $self->render_text($pos_vec, $self->blank x $length, %opts);
+    }
+
     sub render_text($self, $at_vec, $text, %opts) {
         $opts{-justify} //= 'left';
         if ($opts{-justify} eq 'center') {
@@ -375,9 +379,10 @@ package Renderers::DoubleBuffering {
     }
 
     sub render_text($self, $pos_vec, $text, %opts) {
+        no autovivification;
         # say "render_text $text";
-        $opts{$_} //= -1
-            for qw(-fg -bg -attrs);
+        # $opts{$_} //= -1
+        #     for qw(-fg -bg -attrs);
         $opts{-justify} //= 'left';
 
 
@@ -398,7 +403,11 @@ package Renderers::DoubleBuffering {
         }
 
         # say "Prerendering <$text>";
-        $self->bbuf->set_multi($pos->@*, @unpacked);
+        $self->bbuf->update_multi($pos->@*, @unpacked);
+    }
+
+    sub render_style($self, $pos_vec, $length, %opts) {
+        $self->render_text($pos_vec, $self->blank x $length, %opts);
     }
 
     sub render_fmt($self, $pos_vec, $fmt, @args) {
@@ -431,8 +440,8 @@ package Renderers::DoubleBuffering {
                         || $bg    != $terminal_state->{bg}
                         || $attrs != $terminal_state->{attrs})) {
                     $outstr .= color(SGR::fg($fg)) if $fg != -1;
-                    $outstr .= color(SGR::bg($fg)) if $bg != -1;
-                    $outstr .= color(SGR::attrs($fg)) if $attrs != -1;
+                    $outstr .= color(SGR::bg($bg)) if $bg != -1;
+                    $outstr .= color(SGR::attrs($attrs)) if $attrs != -1;
                     $terminal_state = {
                         fg => $fg,
                         bg => $bg,

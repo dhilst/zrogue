@@ -231,6 +231,11 @@ my $dt = Time::HiRes::time();
 my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1);
 $renderer->initscr();
 
+my $hello_pos = Matrix3::Vec::from_xy(0, -10);
+$renderer->render_style($hello_pos, length("Hello world"), -bg => 0x0000ff);
+$renderer->render_text($hello_pos, "Hello world", -fg => 0xff0000, -attrs => ATTR_BOLD);
+$renderer->flush();
+
 my $question = Question::from_xyz(0, 20, 1, "Hello?", $renderer);
 my $menu = Menu::from_xyz(10, 0, 2, $renderer);
 
