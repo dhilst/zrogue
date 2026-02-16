@@ -24,6 +24,7 @@ use Input;
 use Utils qw(aref);
 use Renderers;
 use SGR qw(:attrs);
+use Quad;
 
 package Menu {
     no autovivification;
@@ -55,7 +56,7 @@ EOF
         D => 'MENU3',
     );
 
-    getters qw(focus pos lastpos geo renderer z);
+    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft);
 
     sub from_xyz(
         $x, $y, $z,
@@ -70,6 +71,21 @@ EOF
         $renderer
     ) {
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
+        my ($minx, $maxx, $miny, $maxy);
+        for my $po ($geo->@*) {
+            my ($p, $value) = $po->@*;
+            my ($x, $y) = $p->@*;
+            my $len = length($value);
+            $minx = $x if !defined $minx || $x < $minx;
+            my $x_end = $x + $len - 1;
+            $maxx = $x_end if !defined $maxx || $x_end > $maxx;
+            $miny = $y if !defined $miny || $y < $miny;
+            $maxy = $y if !defined $maxy || $y > $maxy;
+        }
+        my $bg_w = $maxx - $minx + 1;
+        my $bg_h = $maxy - $miny + 1;
+        my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'MENU_BG');
+        my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
         bless {
             focus => undef,
             status => undef,
@@ -77,6 +93,8 @@ EOF
             pos => $pos,
             lastpos => $pos->copy,
             renderer => $renderer,
+            bg_quad => $bg_quad,
+            bg_topleft => $bg_topleft,
             z => $z,
         }, __PACKAGE__;
     }
@@ -107,6 +125,7 @@ EOF
     sub render($self) {
         # ▶ ▷
         my $lastpos = $self->lastpos->copy;
+        $self->renderer->render_quad($self->pos + $self->bg_topleft, $self->bg_quad);
         $self->renderer->render_geometry($self->pos, $self->geo);
         $self->renderer->render_fmt($self->pos + $self->geo->points->{P}, "pos:     %s", $self->pos);
         $self->renderer->render_fmt($self->pos + $self->geo->points->{L}, "lastpos: %s", $lastpos);
@@ -127,6 +146,8 @@ EOF
     }
 
     sub erase($self) {
+        my $blank = Quad::from_wh($self->bg_quad->width, $self->bg_quad->height, 'DEFAULT_BG');
+        $self->renderer->render_quad($self->lastpos + $self->bg_topleft, $blank);
         $self->renderer->erase_geometry($self->lastpos, $self->geo);
         $self->{lastpos} = $self->pos->copy;
     }
@@ -157,17 +178,37 @@ EOF
         pos
         question
         renderer
+        bg_quad
+        bg_topleft
         z
     );
 
     sub from_xyz($x, $y, $z, $question, $renderer) {
         my $pos = Matrix3::Vec::from_xy($x, $y);
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
+        my ($minx, $maxx, $miny, $maxy);
+        for my $po ($geo->@*) {
+            my ($p, $value) = $po->@*;
+            my ($x, $y) = $p->@*;
+            my $len = length($value);
+            $minx = $x if !defined $minx || $x < $minx;
+            my $x_end = $x + $len - 1;
+            $maxx = $x_end if !defined $maxx || $x_end > $maxx;
+            $miny = $y if !defined $miny || $y < $miny;
+            $maxy = $y if !defined $maxy || $y > $maxy;
+        }
+        my $bg_w = $maxx - $minx + 1;
+        my $bg_h = $maxy - $miny + 1;
+        my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'QUESTION_BG');
+        my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
         bless {
             focus => "NO",
             geo => $geo,
             pos => $pos,
+            lastpos => $pos->copy,
             renderer => $renderer,
+            bg_quad => $bg_quad,
+            bg_topleft => $bg_topleft,
             question => $question,
             answer => undef,
             z => $z,
@@ -189,6 +230,7 @@ EOF
     
     sub render($self) {
         # $self->renderer->erase_geometry($self->pos, $self->geo);
+        $self->renderer->render_quad($self->pos + $self->bg_topleft, $self->bg_quad);
         $self->renderer->render_geometry($self->pos, $self->geo);
         $self->renderer->render_text(
             $self->pos + $self->geo->points->{QUESTION},
@@ -209,7 +251,10 @@ EOF
     }
 
     sub erase($self) {
-        $self->renderer->erase_geometry($self->pos, $self->geo);
+        my $blank = Quad::from_wh($self->bg_quad->width, $self->bg_quad->height, 'DEFAULT_BG');
+        $self->renderer->render_quad($self->lastpos + $self->bg_topleft, $blank);
+        $self->renderer->erase_geometry($self->lastpos, $self->geo);
+        $self->{lastpos} = $self->pos->copy;
     }
 
 }
@@ -230,6 +275,15 @@ my $dt = Time::HiRes::time();
 my $mapper = Material::from_callback(sub ($material) {
     return { -bg => 0xcccccc } 
         if $material eq 'STEEL';
+
+    return { -bg => 0x0000ff }
+        if $material eq 'MENU_BG';
+
+    return { -bg => 0x000000 }
+        if $material eq 'QUESTION_BG';
+
+    return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 }
+        if $material eq 'DEFAULT_BG';
 
     return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 };
 });
