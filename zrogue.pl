@@ -17,7 +17,7 @@ use lib "$Bin";
 use Termlib;
 use Matrix3 qw($REFLECT_X $EAST $WEST $SOUTH $NORTH);
 use Geometry3;
-use Geometry4;
+use Material;
 use Views;
 use Viewport;
 use Input;
@@ -227,8 +227,16 @@ my $origin = Matrix3::Vec::from_xy(0, 0);
 my $inp = Input::new();
 my $dt = Time::HiRes::time();
 
+my $mapper = Material::from_callback(sub ($material) {
+    return { -bg => 0xcccccc } 
+        if $material eq 'STEEL';
+
+    return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 };
+});
+
+
 # my $renderer = Renderers::Naive::new($terminal_space);
-my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1);
+my $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1, $mapper);
 $renderer->initscr();
 
 my $hello_pos = Matrix3::Vec::from_xy(0, -10);

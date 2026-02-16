@@ -9,13 +9,14 @@ package Renderers::Naive {
     use Termlib;
     use Utils qw(getters);
 
-    getters qw(terminal_space term blank);
+    getters qw(terminal_space term blank mapper);
     
-    sub new($terminal_space, $blank = '.') {
+    sub new($terminal_space, $mapper, $blank = '.') {
         bless {
-            terminal_space => $terminal_space,
-            term => Termlib::new(),
             blank => $blank,
+            mapper => $mapper,
+            term => Termlib::new(),
+            terminal_space => $terminal_space,
         }, __PACKAGE__,
     }
 
@@ -43,11 +44,16 @@ package Renderers::Naive {
         $self->render_text($pos_vec, $self->blank x $length, %opts);
     }
 
-    sub render_quad($self, $pos_vec, $h, $w, %opts) {
+    sub _render_quad($self, $pos_vec, $h, $w, %opts) {
         for my $row (0 .. $h - 1) {
             my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
             $self->render_style($row_pos, $w, %opts);
         }
+    }
+
+    sub render_quad($self, $pos_vec, $quad) {
+        $self->_render_quad($pos_vec, $quad->height, $quad->width,
+            $self->mapper($quad->material)->%*);
     }
 
     sub render_text($self, $at_vec, $text, %opts) {
@@ -343,9 +349,10 @@ package Renderers::DoubleBuffering {
         width
         packstr
         term
+        mapper
     );
 
-    sub new($terminal_space, $H, $W, $blank = '.') {
+    sub new($terminal_space, $H, $W, $mapper, $blank = '.') {
         my $packstr = "l4";
         my @default = (ord($blank), -1, -1, -1);
         my $bbuf = Renderers::Buffer2D::new($packstr, $H, $W, \@default, -autoclip => 1);
@@ -359,6 +366,7 @@ package Renderers::DoubleBuffering {
             width => $W,
             packstr => $packstr,
             term => Termlib::new(),
+            mapper => $mapper,
         }, __PACKAGE__;
     }
 
@@ -417,11 +425,16 @@ package Renderers::DoubleBuffering {
         $self->render_text($pos_vec, $self->blank x $length, %opts);
     }
 
-    sub render_quad($self, $pos_vec, $h, $w, %opts) {
+    sub _render_quad($self, $pos_vec, $h, $w, %opts) {
         for my $row (0 .. $h - 1) {
             my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
             $self->render_style($row_pos, $w, %opts);
         }
+    }
+
+    sub render_quad($self, $pos_vec, $quad) {
+        $self->_render_quad($pos_vec, $quad->height, $quad->width,
+            $self->mapper->style($quad->material)->%*);
     }
 
     sub render_fmt($self, $pos_vec, $fmt, @args) {
@@ -455,7 +468,7 @@ package Renderers::DoubleBuffering {
                         || $attrs != $terminal_state->{attrs})) {
                     $outstr .= color(SGR::fg($fg)) if $fg != -1;
                     $outstr .= color(SGR::bg($bg)) if $bg != -1;
-                    $outstr .= color(SGR::attrs($attrs)) if $attrs != -1;
+                    $outstr .= color(SGR::attrs($attrs)) // "" if defined $attrs && $attrs != -1;
                     $terminal_state = {
                         fg => $fg,
                         bg => $bg,
