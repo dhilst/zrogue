@@ -7,7 +7,7 @@ use FindBin qw($Bin);
 use lib "$Bin";
 
 use Buffer2D;
-use Material;
+use MaterialMapper;
 use Matrix3;
 use Utils qw(getters);
 
@@ -149,9 +149,9 @@ Surface
     use Surface;
     use Matrix3;
     use Quad;
-    use Material;
+    use MaterialMapper;
 
-    my $mat = Material::from_callback(sub ($material) {
+    my $mat = MaterialMapper::from_callback(sub ($material) {
         return { -bg => 0x303030 } if $material eq 'BG';
         return { -fg => 0xffffff } if $material eq 'FG';
     });
@@ -186,7 +186,7 @@ Options:
 
 =item * C<-material>
 
-L<Material> instance that maps a material name to a style hashref containing
+L<MaterialMapper> instance that maps a material name to a style hashref containing
 C<-fg>, C<-bg>, and/or C<-attrs>.
 
 =item * C<-blank>

@@ -81,11 +81,33 @@ package Renderers::Naive {
             unless $buffer->packstr eq 'l4';
 
         my $stride = $buffer->stride;
-        my $row_bytes = $buffer->W * $stride;
+        my $src_w = $buffer->W;
+        my $src_h = $buffer->H;
+        my $dst_w = Termlib::cols() - 1;
+        my $dst_h = Termlib::rows();
         my $pack_template = sprintf("(%s)*", $buffer->packstr);
 
-        for my $row (0 .. $buffer->H - 1) {
-            my $payload_bytes = substr($buffer->{buf}, $row * $row_bytes, $row_bytes);
+        $col0 = int($col0);
+        $row0 = int($row0);
+
+        my $dst_x0 = $col0 < 0 ? 0 : $col0;
+        my $dst_y0 = $row0 < 0 ? 0 : $row0;
+        my $dst_x1 = $col0 + $src_w;
+        my $dst_y1 = $row0 + $src_h;
+        $dst_x1 = $dst_w if $dst_x1 > $dst_w;
+        $dst_y1 = $dst_h if $dst_y1 > $dst_h;
+
+        return if $dst_x0 >= $dst_x1 || $dst_y0 >= $dst_y1;
+
+        my $src_x0 = $dst_x0 - $col0;
+        my $src_y0 = $dst_y0 - $row0;
+        my $visible_w = $dst_x1 - $dst_x0;
+        my $visible_h = $dst_y1 - $dst_y0;
+
+        my $copy_bytes = $visible_w * $stride;
+        for my $row (0 .. $visible_h - 1) {
+            my $src_idx = (($src_y0 + $row) * $src_w + $src_x0) * $stride;
+            my $payload_bytes = substr($buffer->{buf}, $src_idx, $copy_bytes);
             my @payload = unpack($pack_template, $payload_bytes);
             my $outstr = "";
 
@@ -97,7 +119,7 @@ package Renderers::Naive {
                 $outstr .= chr($cp);
             }
             $outstr .= color('reset');
-            $self->term->write($outstr, $col0, $row0 + $row);
+            $self->term->write($outstr, $dst_x0, $dst_y0 + $row);
         }
     }
 
@@ -297,14 +319,35 @@ package Renderers::DoubleBuffering {
             unless $self->bbuf->packstr eq 'l4';
 
         my $stride = $buffer->stride;
-        my $row_bytes = $buffer->W * $stride;
+        my $src_w = $buffer->W;
+        my $src_h = $buffer->H;
+        my $dst_w = $self->bbuf->W;
+        my $dst_h = $self->bbuf->H;
 
-        for my $row (0 .. $buffer->H - 1) {
-            my $src_idx = $row * $row_bytes;
-            my $dst_idx = (($row0 + $row) * $self->bbuf->W + $col0) * $stride;
-            substr($self->bbuf->{buf}, $dst_idx, $row_bytes)
-                = substr($buffer->{buf}, $src_idx, $row_bytes);
-            $self->bbuf->{_updated_rows}->{ $row0 + $row }++;
+        $col0 = int($col0);
+        $row0 = int($row0);
+
+        my $dst_x0 = $col0 < 0 ? 0 : $col0;
+        my $dst_y0 = $row0 < 0 ? 0 : $row0;
+        my $dst_x1 = $col0 + $src_w;
+        my $dst_y1 = $row0 + $src_h;
+        $dst_x1 = $dst_w if $dst_x1 > $dst_w;
+        $dst_y1 = $dst_h if $dst_y1 > $dst_h;
+
+        return if $dst_x0 >= $dst_x1 || $dst_y0 >= $dst_y1;
+
+        my $src_x0 = $dst_x0 - $col0;
+        my $src_y0 = $dst_y0 - $row0;
+        my $visible_w = $dst_x1 - $dst_x0;
+        my $visible_h = $dst_y1 - $dst_y0;
+
+        my $copy_bytes = $visible_w * $stride;
+        for my $row (0 .. $visible_h - 1) {
+            my $src_idx = (($src_y0 + $row) * $src_w + $src_x0) * $stride;
+            my $dst_idx = (($dst_y0 + $row) * $dst_w + $dst_x0) * $stride;
+            substr($self->bbuf->{buf}, $dst_idx, $copy_bytes)
+                = substr($buffer->{buf}, $src_idx, $copy_bytes);
+            $self->bbuf->{_updated_rows}->{ $dst_y0 + $row }++;
         }
     }
 

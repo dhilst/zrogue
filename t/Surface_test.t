@@ -5,14 +5,14 @@ use Test::Exception;
 use lib ".";
 use Matrix3;
 use Geometry3;
-use Material;
+use MaterialMapper;
 use Quad;
 use Surface;
 
 sub vect($x, $y) { Matrix3::Vec::from_xy($x, $y) }
 
 subtest 'render_text writes glyphs and styles' => sub {
-    my $mat = Material::from_callback(sub ($mat) { return {}; });
+    my $mat = MaterialMapper::from_callback(sub ($mat) { return {}; });
     my $surface = Surface::new(3, 5, -material => $mat);
     $surface->render_text(vect(1, 0), "Hi", -fg => 7);
 
@@ -21,7 +21,7 @@ subtest 'render_text writes glyphs and styles' => sub {
 };
 
 subtest 'render_line uses material style' => sub {
-    my $mat = Material::from_callback(sub ($mat) {
+    my $mat = MaterialMapper::from_callback(sub ($mat) {
         return { -bg => 5 } if $mat eq 'LINE';
     });
     my $surface = Surface::new(3, 5, -material => $mat);
@@ -35,7 +35,7 @@ subtest 'render_line uses material style' => sub {
 };
 
 subtest 'render_quad fills rectangle' => sub {
-    my $mat = Material::from_callback(sub ($mat) {
+    my $mat = MaterialMapper::from_callback(sub ($mat) {
         return { -bg => 9 } if $mat eq 'BG';
     });
     my $surface = Surface::new(3, 4, -material => $mat);
@@ -49,7 +49,7 @@ subtest 'render_quad fills rectangle' => sub {
 };
 
 subtest 'render_geometry draws text at positions' => sub {
-    my $mat = Material::from_callback(sub ($mat) { return {}; });
+    my $mat = MaterialMapper::from_callback(sub ($mat) { return {}; });
     my $surface = Surface::new(3, 3, -material => $mat);
     my $geo = Geometry3::from_str("AB\nCD");
     $surface->render_geometry(vect(0, 0), $geo);
@@ -61,7 +61,7 @@ subtest 'render_geometry draws text at positions' => sub {
 };
 
 subtest 'layers compose via successive draws' => sub {
-    my $mat = Material::from_callback(sub ($mat) {
+    my $mat = MaterialMapper::from_callback(sub ($mat) {
         return { -bg => 3 } if $mat eq 'BG';
     });
     my $surface = Surface::new(2, 2, -material => $mat);

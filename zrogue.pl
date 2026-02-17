@@ -23,6 +23,7 @@ use Viewport;
 use Input;
 use Utils qw(aref);
 use Renderers;
+use Surface;
 use SGR qw(:attrs);
 use Quad;
 
@@ -56,7 +57,7 @@ EOF
         D => 'MENU3',
     );
 
-    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft);
+    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft surface clear_surface);
 
     sub from_xyz(
         $x, $y, $z,
@@ -86,6 +87,42 @@ EOF
         my $bg_h = $maxy - $miny + 1;
         my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'MENU_BG');
         my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
+        my $surface_w = $bg_w + 1;
+        my $surface_h = $bg_h + 1;
+        my $material = $renderer->mapper;
+        my $def_style = $material->style('DEFAULT');
+        my @defaults = (
+            ord(' '),
+            $def_style->{-fg} // -1,
+            $def_style->{-bg} // -1,
+            $def_style->{-attrs} // -1,
+        );
+        my $surface = Surface::new($surface_h, $surface_w,
+            -material => $material,
+            -defaults => \@defaults);
+        my $clear_surface = Surface::new($surface_h, $surface_w,
+            -material => $material,
+            -defaults => \@defaults);
+        my $geo_offset = Matrix3::Vec::from_xy(-$bg_topleft->x, -$bg_topleft->y);
+
+        my $clear_quad = Quad::from_wh($surface_w, $surface_h, 'DEFAULT_BG');
+        $surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
+        $surface->render_quad(Matrix3::Vec::from_xy(0, 0), $bg_quad);
+        $surface->render_line(
+            Matrix3::Vec::from_xy($bg_w, -1),
+            Matrix3::Vec::from_xy($bg_w, -$bg_h),
+            'SHADOW_BG',
+        );
+        if ($bg_w > 1) {
+            $surface->render_line(
+                Matrix3::Vec::from_xy(1, -$bg_h),
+                Matrix3::Vec::from_xy($bg_w - 1, -$bg_h),
+                'SHADOW_BG',
+            );
+        }
+        $surface->render_geometry($geo_offset, $geo);
+
+        $clear_surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
         bless {
             focus => undef,
             status => undef,
@@ -96,34 +133,10 @@ EOF
             renderer => $renderer,
             bg_quad => $bg_quad,
             bg_topleft => $bg_topleft,
+            surface => $surface,
+            clear_surface => $clear_surface,
             z => $z,
         }, __PACKAGE__;
-    }
-
-    sub _render_shadow_at($self, $pos, $material) {
-        my $top_left = $pos + $self->bg_topleft;
-        my ($x0, $y0) = $top_left->@*;
-        my $w = $self->bg_quad->width;
-        my $h = $self->bg_quad->height;
-
-        my $right_x = $x0 + $w;
-        my $right_top = $y0 - 1;
-        my $right_bottom = $y0 - $h;
-        $self->renderer->render_line(
-            Matrix3::Vec::from_xy($right_x, $right_top),
-            Matrix3::Vec::from_xy($right_x, $right_bottom),
-            $material,
-        );
-
-        return if $w < 2;
-        my $bottom_y = $y0 - $h;
-        my $bottom_left = $x0 + 1;
-        my $bottom_right = $x0 + $w - 1;
-        $self->renderer->render_line(
-            Matrix3::Vec::from_xy($bottom_left, $bottom_y),
-            Matrix3::Vec::from_xy($bottom_right, $bottom_y),
-            $material,
-        );
     }
 
     sub update($self, @events) {
@@ -169,9 +182,7 @@ EOF
     sub render($self) {
         # ▶ ▷
         my $lastpos = $self->lastpos->copy;
-        $self->_render_shadow_at($self->pos, 'SHADOW_BG');
-        $self->renderer->render_quad($self->pos + $self->bg_topleft, $self->bg_quad);
-        $self->renderer->render_geometry($self->pos, $self->geo);
+        $self->renderer->render_buffer($self->pos + $self->bg_topleft, $self->{surface}->buffer);
         $self->renderer->render_fmt($self->pos + $self->geo->points->{P}, "pos:     %s", $self->pos);
         $self->renderer->render_fmt($self->pos + $self->geo->points->{L}, "lastpos: %s", $lastpos);
 
@@ -192,10 +203,7 @@ EOF
     }
 
     sub erase($self) {
-        my $blank = Quad::from_wh($self->bg_quad->width, $self->bg_quad->height, 'DEFAULT_BG');
-        $self->_render_shadow_at($self->lastpos, 'DEFAULT_BG');
-        $self->renderer->render_quad($self->lastpos + $self->bg_topleft, $blank);
-        $self->renderer->erase_geometry($self->lastpos, $self->geo);
+        $self->renderer->render_buffer($self->lastpos + $self->bg_topleft, $self->{clear_surface}->buffer);
         $self->{lastpos} = $self->pos->copy;
     }
 
@@ -227,6 +235,8 @@ EOF
         renderer
         bg_quad
         bg_topleft
+        surface
+        clear_surface
         z
     );
 
@@ -248,6 +258,45 @@ EOF
         my $bg_h = $maxy - $miny + 1;
         my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'QUESTION_BG');
         my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
+        my $surface_w = $bg_w + 1;
+        my $surface_h = $bg_h + 1;
+        my $material = $renderer->mapper;
+        my $def_style = $material->style('DEFAULT');
+        my @defaults = (
+            ord(' '),
+            $def_style->{-fg} // -1,
+            $def_style->{-bg} // -1,
+            $def_style->{-attrs} // -1,
+        );
+        my $surface = Surface::new($surface_h, $surface_w,
+            -material => $material,
+            -defaults => \@defaults);
+        my $clear_surface = Surface::new($surface_h, $surface_w,
+            -material => $material,
+            -defaults => \@defaults);
+        my $geo_offset = Matrix3::Vec::from_xy(-$bg_topleft->x, -$bg_topleft->y);
+
+        $surface->render_quad(Matrix3::Vec::from_xy(0, 0), $bg_quad);
+        $surface->render_line(
+            Matrix3::Vec::from_xy($bg_w, -1),
+            Matrix3::Vec::from_xy($bg_w, -$bg_h),
+            'SHADOW_BG',
+        );
+        if ($bg_w > 1) {
+            $surface->render_line(
+                Matrix3::Vec::from_xy(1, -$bg_h),
+                Matrix3::Vec::from_xy($bg_w - 1, -$bg_h),
+                'SHADOW_BG',
+            );
+        }
+        $surface->render_geometry($geo_offset, $geo);
+        $surface->render_text(
+            $geo->points->{QUESTION} + $geo_offset,
+            $question,
+            -justify => 'center');
+
+        my $clear_quad = Quad::from_wh($surface_w, $surface_h, 'DEFAULT_BG');
+        $clear_surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
         bless {
             focus => "NO",
             geo => $geo,
@@ -256,6 +305,8 @@ EOF
             renderer => $renderer,
             bg_quad => $bg_quad,
             bg_topleft => $bg_topleft,
+            surface => $surface,
+            clear_surface => $clear_surface,
             question => $question,
             answer => undef,
             z => $z,
@@ -289,24 +340,7 @@ EOF
     
     sub render($self) {
         # $self->renderer->erase_geometry($self->pos, $self->geo);
-        $self->renderer->render_line(
-            $self->pos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width, -1),
-            $self->pos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width, -$self->bg_quad->height),
-            'SHADOW_BG',
-        );
-        if ($self->bg_quad->width > 1) {
-            $self->renderer->render_line(
-                $self->pos + $self->bg_topleft + Matrix3::Vec::from_xy(1, -$self->bg_quad->height),
-                $self->pos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width - 1, -$self->bg_quad->height),
-                'SHADOW_BG',
-            );
-        }
-        $self->renderer->render_quad($self->pos + $self->bg_topleft, $self->bg_quad);
-        $self->renderer->render_geometry($self->pos, $self->geo);
-        $self->renderer->render_text(
-            $self->pos + $self->geo->points->{QUESTION},
-            $self->question,
-            -justify => 'center');
+        $self->renderer->render_buffer($self->pos + $self->bg_topleft, $self->{surface}->buffer);
 
         if ($self->focus eq "YES") {
             $self->renderer->render_text($self->pos + $self->geo->points->{YES}, "> YES");
@@ -322,21 +356,7 @@ EOF
     }
 
     sub erase($self) {
-        my $blank = Quad::from_wh($self->bg_quad->width, $self->bg_quad->height, 'DEFAULT_BG');
-        $self->renderer->render_line(
-            $self->lastpos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width, -1),
-            $self->lastpos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width, -$self->bg_quad->height),
-            'DEFAULT_BG',
-        );
-        if ($self->bg_quad->width > 1) {
-            $self->renderer->render_line(
-                $self->lastpos + $self->bg_topleft + Matrix3::Vec::from_xy(1, -$self->bg_quad->height),
-                $self->lastpos + $self->bg_topleft + Matrix3::Vec::from_xy($self->bg_quad->width - 1, -$self->bg_quad->height),
-                'DEFAULT_BG',
-            );
-        }
-        $self->renderer->render_quad($self->lastpos + $self->bg_topleft, $blank);
-        $self->renderer->erase_geometry($self->lastpos, $self->geo);
+        $self->renderer->render_buffer($self->lastpos + $self->bg_topleft, $self->{clear_surface}->buffer);
         $self->{lastpos} = $self->pos->copy;
     }
 
@@ -457,7 +477,7 @@ while (1) {
     if (@changed) {
         $_->erase() for @changed;
         my %changed = map { $_ => 1 } @changed;
-        $_->render() for grep { $changed{$_} } wids;
+        $_->render() for grep { $changed{$_} } wids();
         $renderer->flush();
     }
 }
