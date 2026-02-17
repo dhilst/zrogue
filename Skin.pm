@@ -44,10 +44,10 @@ sub layout($geo) {
 
 sub from_geometry($geo, %opts) {
     confess "missing geometry" unless defined $geo;
-    my $material = $opts{-material};
-    confess "missing material mapper" unless defined $material;
-    confess "material must support style()"
-        unless ref($material) && $material->can('style');
+    my $mapper = $opts{-mapper};
+    confess "missing material mapper" unless defined $mapper;
+    confess "mapper must support style()"
+        unless ref($mapper) && $mapper->can('style');
     my $bg = $opts{-bg};
     confess "missing bg material" unless defined $bg;
     my $shadow = $opts{-shadow};
@@ -65,7 +65,7 @@ sub from_geometry($geo, %opts) {
 
     my $defaults = $opts{-defaults};
     if (!defined $defaults) {
-        my $style = $material->style('DEFAULT');
+        my $style = $mapper->style('DEFAULT');
         my $fg = exists $style->{-fg} ? ($style->{-fg} // -1) : -1;
         my $bgc = exists $style->{-bg} ? ($style->{-bg} // -1) : -1;
         my $attrs = exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1;
@@ -73,12 +73,12 @@ sub from_geometry($geo, %opts) {
     }
 
     my $surface = Surface::new($surface_h, $surface_w,
-        -material => $material,
+        -material => $mapper,
         -defaults => $defaults,
         -blank => $blank,
         -autoclip => $autoclip);
     my $clear_surface = Surface::new($surface_h, $surface_w,
-        -material => $material,
+        -material => $mapper,
         -defaults => $defaults,
         -blank => $blank,
         -autoclip => $autoclip);
@@ -121,7 +121,7 @@ Skin
 
     use Skin;
     my $surface = Skin::from_geometry($geo,
-        -material => $mat,
+        -mapper => $mat,
         -bg => 'MENU_BG',
         -shadow => 'SHADOW_BG',
     );
@@ -141,7 +141,7 @@ clean surface for erase operations.
 
 Creates and returns a Surface. Options:
 
-- C<-material> MaterialMapper instance (required)
+- C<-mapper> MaterialMapper instance (required)
 - C<-bg> background material name (required)
 - C<-shadow> shadow material name (optional)
 - C<-clear> clear material name (default: C<DEFAULT_BG>)

@@ -21,7 +21,7 @@ subtest 'skin with shadow' => sub {
     my $geo = Geometry3::from_str("AB\nCD");
 
     my ($surface, $clear_surface) = Skin::from_geometry($geo,
-        -material => $mat,
+        -mapper => $mat,
         -bg => 'BG',
         -shadow => 'SHADOW',
     );
@@ -53,7 +53,7 @@ subtest 'skin without shadow' => sub {
     });
     my $geo = Geometry3::from_str("X");
     my ($surface, $clear_surface) = Skin::from_geometry($geo,
-        -material => $mat,
+        -mapper => $mat,
         -bg => 'BG',
     );
 

@@ -94,8 +94,8 @@ EOF
         my $select_max = defined $select_pos ? ($maxx - $select_pos->x - 1) : undef;
         $select_max = undef if defined $select_max && $select_max < 0;
         my $bg_topleft = $layout->{topleft};
-        my $material = $renderer->mapper;
-        my $def_style = $material->style('DEFAULT');
+        my $mapper = $renderer->mapper;
+        my $def_style = $mapper->style('DEFAULT');
         my @defaults = (
             ord(' '),
             $def_style->{-fg} // -1,
@@ -103,7 +103,7 @@ EOF
             $def_style->{-attrs} // -1,
         );
         my ($surface, $clear_surface) = Skin::from_geometry($geo,
-            -material => $material,
+            -mapper => $mapper,
             -bg => 'MENU_BG',
             -shadow => 'SHADOW_BG',
             -defaults => \@defaults,
@@ -311,8 +311,8 @@ EOF
         my $minx = $layout->{minx};
         my $maxy = $layout->{maxy};
         my $bg_topleft = $layout->{topleft};
-        my $material = $renderer->mapper;
-        my $def_style = $material->style('DEFAULT');
+        my $mapper = $renderer->mapper;
+        my $def_style = $mapper->style('DEFAULT');
         my @defaults = (
             ord(' '),
             $def_style->{-fg} // -1,
@@ -320,7 +320,7 @@ EOF
             $def_style->{-attrs} // -1,
         );
         my ($surface, $clear_surface) = Skin::from_geometry($geo,
-            -material => $material,
+            -mapper => $mapper,
             -bg => 'QUESTION_BG',
             -shadow => 'SHADOW_BG',
             -defaults => \@defaults,
@@ -409,21 +409,21 @@ my $dt = Time::HiRes::time();
 my $resized = 0;
 local $SIG{WINCH} = sub { $resized = 1; };
 
-my $mapper = MaterialMapper::from_callback(sub ($material) {
+my $mapper = MaterialMapper::from_callback(sub ($mapper) {
     return { -bg => 0xcccccc } 
-        if $material eq 'STEEL';
+        if $mapper eq 'STEEL';
 
     return { -bg => 0xaa00aa, -attrs => ATTR_BOLD }
-        if $material eq 'MENU_BG';
+        if $mapper eq 'MENU_BG';
 
     return { -bg => 0x000000 }
-        if $material eq 'QUESTION_BG';
+        if $mapper eq 'QUESTION_BG';
 
     return { -bg => 0x303030 }
-        if $material eq 'SHADOW_BG';
+        if $mapper eq 'SHADOW_BG';
 
     return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 }
-        if $material eq 'DEFAULT';
+        if $mapper eq 'DEFAULT';
 
     return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 };
 });
