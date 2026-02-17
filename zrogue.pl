@@ -26,6 +26,7 @@ use Renderers;
 use Surface;
 use SGR qw(:attrs);
 use Quad;
+use TextInput;
 
 package Menu {
     no autovivification;
@@ -34,6 +35,7 @@ package Menu {
     use FindBin qw($Bin);
     use lib "$Bin";
 
+    use SGR qw(:attrs);
     use Matrix3 qw($EAST $WEST $SOUTH $NORTH);
     use Utils qw(getters);
 
@@ -43,6 +45,7 @@ package Menu {
 ├──────────────────────────────────────────┤
 │$H MENU1        $P                        │
 │$M MENU2        $L                        │
+│$I INPUT: $INP                            │
 │$D MENU3                                  │
 ├──────────────────────────────────────────┤
 │ Status: $R                               │
@@ -50,14 +53,14 @@ package Menu {
 EOF
 
 #|-------------------------------|
-    my @CYCLES = qw(H M D);
+    my @CYCLES = qw(H M I D);
     my %NAMES = (
         H => 'MENU1',
         M => 'MENU2',
         D => 'MENU3',
     );
 
-    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft surface clear_surface);
+    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft surface clear_surface text_input input_active);
 
     sub from_xyz(
         $x, $y, $z,
@@ -85,6 +88,9 @@ EOF
         }
         my $bg_w = $maxx - $minx + 1;
         my $bg_h = $maxy - $miny + 1;
+        my $input_pos = $geo->points->{INP};
+        my $input_max = defined $input_pos ? ($maxx - $input_pos->x - 1) : undef;
+        $input_max = undef if defined $input_max && $input_max < 0;
         my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'MENU_BG');
         my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
         my $surface_w = $bg_w + 1;
@@ -123,6 +129,7 @@ EOF
         $surface->render_geometry($geo_offset, $geo);
 
         $clear_surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
+        my $text_input = TextInput::new(-max_len => $input_max);
         bless {
             focus => undef,
             status => undef,
@@ -135,6 +142,8 @@ EOF
             bg_topleft => $bg_topleft,
             surface => $surface,
             clear_surface => $clear_surface,
+            text_input => $text_input,
+            input_active => 0,
             z => $z,
         }, __PACKAGE__;
     }
@@ -142,8 +151,19 @@ EOF
     sub update($self, @events) {
         my $changed = 0;
         my $idx = Utils::Array::index_of($self->{focus} // 'D', @CYCLES);
+        my @input_events;
         for my $event (@events) {
             my $char = $event->payload->char;
+            my $code = $event->payload->code;
+            if ($self->{input_active}) {
+                if ($code == Event::KeyCode::ESC) {
+                    $self->{input_active} = 0;
+                    $changed = 1;
+                    next;
+                }
+                push @input_events, $event;
+                next;
+            }
             if ($char eq 'k') {
                 $self->{focus} = $CYCLES[--$idx % @CYCLES];
                 $changed = 1;
@@ -162,13 +182,23 @@ EOF
             } elsif ($char eq 'L') {
                 $self->{pos} *= $EAST;
                 $changed = 1;
-            } elsif ($event->payload->code eq 0x0a && defined $self->focus) {
-                my $status = sprintf "%s selected", $NAMES{$self->{focus}};
-                if (!defined $self->{status} || $self->{status} ne $status) {
-                    $self->{status} = $status;
+            } elsif ($code == Event::KeyCode::ENTER && defined $self->focus) {
+                if ($self->{focus} eq 'I') {
+                    $self->{input_active} = 1;
+                    $self->{text_input}->clear_flags;
                     $changed = 1;
+                } else {
+                    my $status = sprintf "%s selected", $NAMES{$self->{focus}};
+                    if (!defined $self->{status} || $self->{status} ne $status) {
+                        $self->{status} = $status;
+                        $changed = 1;
+                    }
                 }
             }
+        }
+
+        if ($self->{input_active}) {
+            $changed = 1 if $self->{text_input}->update(@input_events);
         }
 
         my $now = POSIX::strftime("%H:%M:%S", localtime);
@@ -197,6 +227,12 @@ EOF
         if (defined $self->{status}) {
             $self->renderer->render_text($self->pos + $self->geo->points->{R}, $self->{status})
         }
+        my %input_opts = $self->{input_active} ? (-attrs => ATTR_UNDERLINE) : ();
+        $self->renderer->render_text(
+            $self->pos + $self->geo->points->{INP},
+            $self->{text_input}->text,
+            %input_opts,
+        );
         my $time = $self->{time} // POSIX::strftime("%H:%M:%S", localtime);
         $self->renderer->render_text($self->pos + $self->geo->points->{T}, $time,
             -justify => 'right');
@@ -460,7 +496,7 @@ while (1) {
     my $z_changed = 0;
     for my $event (@events) {
         if ($event->type eq Event::Type::KEY_PRESS
-            && $event->payload->code eq Event::KeyCode::ESC) {
+            && $event->payload->char eq 'q') {
             last OUT;
         } elsif ($event->type eq Event::Type::KEY_PRESS
             && $event->payload->char eq 's') {
