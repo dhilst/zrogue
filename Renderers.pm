@@ -72,6 +72,35 @@ package Renderers::Naive {
             $self->mapper($quad->material)->%*);
     }
 
+    sub render_buffer($self, $pos_vec, $buffer) {
+        use Term::ANSIColor qw(color);
+        my $pos = $pos_vec * $self->terminal_space;
+        my ($col0, $row0) = $pos->@*;
+
+        confess "render_buffer expects packstr l4"
+            unless $buffer->packstr eq 'l4';
+
+        my $stride = $buffer->stride;
+        my $row_bytes = $buffer->W * $stride;
+        my $pack_template = sprintf("(%s)*", $buffer->packstr);
+
+        for my $row (0 .. $buffer->H - 1) {
+            my $payload_bytes = substr($buffer->{buf}, $row * $row_bytes, $row_bytes);
+            my @payload = unpack($pack_template, $payload_bytes);
+            my $outstr = "";
+
+            for (my $i = 0; $i < @payload; $i += 4) {
+                my ($cp, $fg, $bg, $attrs) = @payload[$i .. $i + 3];
+                $outstr .= color(SGR::fg($fg)) if $fg != -1;
+                $outstr .= color(SGR::bg($bg)) if $bg != -1;
+                $outstr .= color(SGR::attrs($attrs)) // "" if defined $attrs && $attrs != -1;
+                $outstr .= chr($cp);
+            }
+            $outstr .= color('reset');
+            $self->term->write($outstr, $col0, $row0 + $row);
+        }
+    }
+
     sub render_line($self, $pos_start, $pos_end, $material) {
         my ($x0, $y0) = $pos_start->@*;
         my ($x1, $y1) = $pos_end->@*;
@@ -256,6 +285,27 @@ package Renderers::DoubleBuffering {
     sub render_quad($self, $pos_vec, $quad) {
         $self->_render_quad($pos_vec, $quad->height, $quad->width,
             $self->mapper->style($quad->material)->%*);
+    }
+
+    sub render_buffer($self, $pos_vec, $buffer) {
+        my $pos = $pos_vec * $self->terminal_space;
+        my ($col0, $row0) = $pos->@*;
+
+        confess "render_buffer expects packstr l4"
+            unless $buffer->packstr eq 'l4';
+        confess "render_buffer expects packstr l4"
+            unless $self->bbuf->packstr eq 'l4';
+
+        my $stride = $buffer->stride;
+        my $row_bytes = $buffer->W * $stride;
+
+        for my $row (0 .. $buffer->H - 1) {
+            my $src_idx = $row * $row_bytes;
+            my $dst_idx = (($row0 + $row) * $self->bbuf->W + $col0) * $stride;
+            substr($self->bbuf->{buf}, $dst_idx, $row_bytes)
+                = substr($buffer->{buf}, $src_idx, $row_bytes);
+            $self->bbuf->{_updated_rows}->{ $row0 + $row }++;
+        }
     }
 
     sub render_line($self, $pos_start, $pos_end, $material) {

@@ -1,4 +1,4 @@
-package Material;
+package MaterialMapper;
 
 use v5.36;
 use utf8;
@@ -46,15 +46,15 @@ __END__
 
 =head1 NAME
 
-Material
+MaterialMapper
 
 =head1 SYNOPSIS
 
     use lib ".";
     use SGR qw(:attrs):
-    use Material;
+    use MaterialMapper;
 
-    my $mat = Material::from_callback(sub ($material) {
+    my $mat = MaterialMapper::from_callback(sub ($material) {
         return { -fg => 0xff00ff } if $material eq 'MAGENTA';
         return { -bg => 0x000000, -attrs => ATTR_BOLD } if $material eq 'HIGHLIGHT';
     });
@@ -63,7 +63,7 @@ Material
 
 =head1 DESCRIPTION
 
-Material wraps a user-provided callback into a mapping from MATERIAL to STYLE.
+MaterialMapper wraps a user-provided callback into a mapping from MATERIAL to STYLE.
 STYLE is a hashref that may contain C<-fg>, C<-bg>, and C<-attrs> keys; any of
 them may be absent. Unknown keys and undefined materials cause an error.
 
@@ -73,7 +73,7 @@ them may be absent. Unknown keys and undefined materials cause an error.
 
 =item from_callback($callback)
 
-Creates a Material mapping. The callback is invoked as C<$callback->($material)>
+Creates a MaterialMapper mapping. The callback is invoked as C<$callback->($material)>
 and must return a style hashref or C<undef>.
 
 =item style($material)

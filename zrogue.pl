@@ -17,7 +17,7 @@ use lib "$Bin";
 use Termlib;
 use Matrix3 qw($REFLECT_X $EAST $WEST $SOUTH $NORTH);
 use Geometry3;
-use Material;
+use MaterialMapper;
 use Views;
 use Viewport;
 use Input;
@@ -357,7 +357,7 @@ my $dt = Time::HiRes::time();
 my $resized = 0;
 local $SIG{WINCH} = sub { $resized = 1; };
 
-my $mapper = Material::from_callback(sub ($material) {
+my $mapper = MaterialMapper::from_callback(sub ($material) {
     return { -bg => 0xcccccc } 
         if $material eq 'STEEL';
 
