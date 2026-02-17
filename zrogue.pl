@@ -27,6 +27,8 @@ use Surface;
 use SGR qw(:attrs);
 use Quad;
 use TextInput;
+use CheckboxInput;
+use SelectInput;
 
 package Menu {
     no autovivification;
@@ -46,6 +48,8 @@ package Menu {
 │$H MENU1        $P                        │
 │$M MENU2        $L                        │
 │$I INPUT: $INP                            │
+│$B CHECK: $C                              │
+│$S SELECT: $SV                            │
 │$D MENU3                                  │
 ├──────────────────────────────────────────┤
 │ Status: $R                               │
@@ -53,14 +57,17 @@ package Menu {
 EOF
 
 #|-------------------------------|
-    my @CYCLES = qw(H M I D);
+    my @CYCLES = qw(H M I B S D);
     my %NAMES = (
         H => 'MENU1',
         M => 'MENU2',
         D => 'MENU3',
     );
 
-    getters qw(focus pos lastpos geo renderer z bg_quad bg_topleft surface clear_surface text_input input_active);
+    getters qw(
+        focus pos lastpos geo renderer z bg_quad bg_topleft surface clear_surface
+        text_input checkbox_input select_input active_input select_max
+    );
 
     sub from_xyz(
         $x, $y, $z,
@@ -91,6 +98,9 @@ EOF
         my $input_pos = $geo->points->{INP};
         my $input_max = defined $input_pos ? ($maxx - $input_pos->x - 1) : undef;
         $input_max = undef if defined $input_max && $input_max < 0;
+        my $select_pos = $geo->points->{SV};
+        my $select_max = defined $select_pos ? ($maxx - $select_pos->x - 1) : undef;
+        $select_max = undef if defined $select_max && $select_max < 0;
         my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'MENU_BG');
         my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
         my $surface_w = $bg_w + 1;
@@ -130,6 +140,8 @@ EOF
 
         $clear_surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
         my $text_input = TextInput::new(-max_len => $input_max);
+        my $checkbox_input = CheckboxInput::new();
+        my $select_input = SelectInput::new(-options => [qw(ONE TWO THREE)]);
         bless {
             focus => undef,
             status => undef,
@@ -143,7 +155,10 @@ EOF
             surface => $surface,
             clear_surface => $clear_surface,
             text_input => $text_input,
-            input_active => 0,
+            checkbox_input => $checkbox_input,
+            select_input => $select_input,
+            select_max => $select_max,
+            active_input => undef,
             z => $z,
         }, __PACKAGE__;
     }
@@ -155,9 +170,9 @@ EOF
         for my $event (@events) {
             my $char = $event->payload->char;
             my $code = $event->payload->code;
-            if ($self->{input_active}) {
+            if ($self->{active_input}) {
                 if ($code == Event::KeyCode::ESC) {
-                    $self->{input_active} = 0;
+                    $self->{active_input} = undef;
                     $changed = 1;
                     next;
                 }
@@ -184,8 +199,16 @@ EOF
                 $changed = 1;
             } elsif ($code == Event::KeyCode::ENTER && defined $self->focus) {
                 if ($self->{focus} eq 'I') {
-                    $self->{input_active} = 1;
+                    $self->{active_input} = 'text';
                     $self->{text_input}->clear_flags;
+                    $changed = 1;
+                } elsif ($self->{focus} eq 'B') {
+                    $self->{active_input} = 'checkbox';
+                    $self->{checkbox_input}->clear_flags;
+                    $changed = 1;
+                } elsif ($self->{focus} eq 'S') {
+                    $self->{active_input} = 'select';
+                    $self->{select_input}->clear_flags;
                     $changed = 1;
                 } else {
                     my $status = sprintf "%s selected", $NAMES{$self->{focus}};
@@ -197,8 +220,14 @@ EOF
             }
         }
 
-        if ($self->{input_active}) {
-            $changed = 1 if $self->{text_input}->update(@input_events);
+        if ($self->{active_input}) {
+            if ($self->{active_input} eq 'text') {
+                $changed = 1 if $self->{text_input}->update(@input_events);
+            } elsif ($self->{active_input} eq 'checkbox') {
+                $changed = 1 if $self->{checkbox_input}->update(@input_events);
+            } elsif ($self->{active_input} eq 'select') {
+                $changed = 1 if $self->{select_input}->update(@input_events);
+            }
         }
 
         my $now = POSIX::strftime("%H:%M:%S", localtime);
@@ -227,11 +256,43 @@ EOF
         if (defined $self->{status}) {
             $self->renderer->render_text($self->pos + $self->geo->points->{R}, $self->{status})
         }
-        my %input_opts = $self->{input_active} ? (-attrs => ATTR_UNDERLINE) : ();
+        my %input_opts = $self->{active_input} && $self->{active_input} eq 'text'
+            ? (-attrs => ATTR_REVERSE)
+            : ();
+        my $input_text = $self->{text_input}->text;
+        if (defined $self->{text_input}->max_len) {
+            my $pad = $self->{text_input}->max_len - length($input_text);
+            $input_text .= ' ' x $pad if $pad > 0;
+        }
         $self->renderer->render_text(
             $self->pos + $self->geo->points->{INP},
-            $self->{text_input}->text,
+            $input_text,
             %input_opts,
+        );
+        my $check = $self->{checkbox_input}->checked ? '[x]' : '[ ]';
+        my %check_opts = $self->{active_input} && $self->{active_input} eq 'checkbox'
+            ? (-attrs => ATTR_REVERSE)
+            : ();
+        $self->renderer->render_text(
+            $self->pos + $self->geo->points->{C},
+            $check,
+            %check_opts,
+        );
+        my $options = $self->{select_input}->options;
+        my $sel_text = $options->[ $self->{select_input}->index ];
+        if (defined $self->{select_max}) {
+            $sel_text = substr($sel_text, 0, $self->{select_max})
+                if length($sel_text) > $self->{select_max};
+            my $pad = $self->{select_max} - length($sel_text);
+            $sel_text .= ' ' x $pad if $pad > 0;
+        }
+        my %select_opts = $self->{active_input} && $self->{active_input} eq 'select'
+            ? (-attrs => ATTR_REVERSE)
+            : ();
+        $self->renderer->render_text(
+            $self->pos + $self->geo->points->{SV},
+            $sel_text,
+            %select_opts,
         );
         my $time = $self->{time} // POSIX::strftime("%H:%M:%S", localtime);
         $self->renderer->render_text($self->pos + $self->geo->points->{T}, $time,
