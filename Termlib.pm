@@ -41,9 +41,18 @@ sub clear($self) {
 sub write($self, $value, $col, $row, @ignored) {
     return if $ENV{SUPPRESS_TERMLIB};
     local $| = 1;
-    print $self->term->Tputs("sc", 1);
+    # print $self->term->Tputs("sc", 1);
     print $self->term->Tgoto("cm", $col, $row);
     print $value;
+    #print $self->term->Tputs("rc", 1);
+}
+
+sub write_batch($self, $values_ref) {
+    return if $ENV{SUPPRESS_TERMLIB};
+    local $| = 1;
+    print $self->term->Tputs("sc", 1);
+    $self->write($_->@*)
+        for $values_ref->@*;
     print $self->term->Tputs("rc", 1);
 }
 

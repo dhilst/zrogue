@@ -394,6 +394,7 @@ package Renderers::DoubleBuffering {
             attrs => undef,
         );
 
+        my @term_commands;
         for my $update (@updates) {
             my $payload = $update->{payload};
             my $step = int($update->{payload}->@* / $update->{size});
@@ -420,9 +421,10 @@ package Renderers::DoubleBuffering {
             } $step, $payload;
             $outstr .= color('reset');
             $terminal_state = undef;
-            $self->term->write($outstr, $update->{col}, $update->{row});
+            push @term_commands, [$outstr, $update->{col}, $update->{row}];
         }
 
+        $self->term->write_batch(\@term_commands);
         $self->fbuf->sync($self->bbuf);
     }
 
