@@ -4,12 +4,12 @@ use Test::Exception;
 use Data::Dumper;
 
 use lib ".";
-use Renderers;
+use Buffer2D;
 
 
 subtest 'single cell diff' => sub {
     # Back buffer holds the rendering frame
-    my $back = Renderers::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
     $back->set(0, 0, [0,2,3]);
@@ -25,7 +25,7 @@ subtest 'single cell diff' => sub {
 
 subtest 'multiple independent updates' => sub {
     # Back buffer holds the rendering frame
-    my $back = Renderers::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
     $back->set(0, 0, [1,0,0]);
@@ -44,7 +44,7 @@ subtest 'multiple independent updates' => sub {
 
 subtest 'last write wins' => sub {
     # Back buffer holds the rendering frame
-    my $back = Renderers::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
     $back->set(1, 0, [1,1,1]);
@@ -63,7 +63,7 @@ subtest 'last write wins' => sub {
 
 subtest 'no-op update produces no diff' => sub {
     # Back buffer holds the rendering frame
-    my $back = Renderers::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
     $back->set(1, 0, [0,0,0]);
@@ -79,7 +79,7 @@ subtest 'no-op update produces no diff' => sub {
 
 subtest 'set_multi and updated payload diff' => sub {
     # Back buffer holds the rendering frame
-    my $back = Renderers::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
 
@@ -110,7 +110,7 @@ subtest 'set_multi and updated payload diff' => sub {
 
 subtest 'bounds checking and exceptions' => sub {
     my $H = 3, my $W = 4;
-    my $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0]);
+    my $back = Buffer2D::new("l3", $H, $W, [0,0,0]);
     dies_ok  { $back->set(5, 0, [1,1,1]) }      'set out of bounds dies';
     dies_ok  { $back->get(5, 0) }               'get out of bounds dies';
     lives_ok { $back->set(3, 0, [1,2,3]) }      'set at boundary lives';
@@ -123,7 +123,7 @@ subtest 'bounds checking and exceptions' => sub {
 };
 
 subtest 'partial updates works as expected' => sub {
-    my $back = Renderers::Buffer2D::new("l3", 3, 4, [0,0,0]);
+    my $back = Buffer2D::new("l3", 3, 4, [0,0,0]);
 
     $back->set_multi(0, 0, [1,0,0], [1,0,0]); 
     is_deeply([ $back->get(0, 0) ], [1,0,0]);
@@ -144,7 +144,7 @@ subtest 'partial updates works as expected' => sub {
 
 subtest 'clip works as expected' => sub {
     my $H = 3, my $W = 4;
-    my $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    my $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
 
     is_deeply([ $back->clip( 0,  0,    1  ) ], [   0  ,    0  ,    1  ],  "no cliping = nop");
     is_deeply([ $back->clip(-1,  0,    1  ) ], [   0  ,    0  ,    0  ],  "negative col offscreen");
@@ -160,27 +160,27 @@ subtest 'clip works as expected' => sub {
 subtest 'autoclip off-screen writes are ignored' => sub {
     my $H = 3, my $W = 4;
 
-    my $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    my $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set(-1, 0, [1,1,1]);
     is_deeply([ $back->get(0, 0) ], [0,0,0], "offscreen left single ignored");
 
-    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set($W, 0, [1,1,1]);
     is_deeply([ $back->get($W - 1, 0) ], [0,0,0], "offscreen right single ignored");
 
-    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set(0, -1, [1,1,1]);
     is_deeply([ $back->get(0, 0) ], [0,0,0], "offscreen row above ignored");
 
-    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set(0, $H, [1,1,1]);
     is_deeply([ $back->get(0, $H - 1) ], [0,0,0], "offscreen row below ignored");
 
-    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set_multi($W - 1, 0, [3,3,3], [4,4,4]);
     is_deeply([ $back->get($W - 1, 0) ], [3,3,3], "right edge clip keeps visible");
 
-    $back = Renderers::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set_multi(-3, 0, [5,5,5], [6,6,6]);
     is_deeply([ $back->get(0, 0) ], [0,0,0], "fully offscreen left ignored");
 };
