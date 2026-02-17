@@ -12,9 +12,19 @@ getters qw(
     options
     index
     selected
+    max_len
+    material
     submitted
     cancelled
 );
+
+sub max_len_from_bounds($anchor, $maxx) {
+    return undef if !defined $anchor || !defined $maxx;
+    my $x = ref($anchor) && $anchor->can('x') ? $anchor->x : $anchor;
+    my $max = $maxx - $x - 1;
+    return undef if $max < 0;
+    $max;
+}
 
 sub new(%opts) {
     my $options = $opts{-options};
@@ -28,11 +38,18 @@ sub new(%opts) {
     my $selected = defined $opts{-selected} ? int($opts{-selected}) : $index;
     confess "selected out of range"
         if $selected < 0 || $selected > $options->$#*;
+    my $max_len = $opts{-max_len};
+    if (!defined $max_len && defined $opts{-max_from}) {
+        my ($anchor, $maxx) = $opts{-max_from}->@*;
+        $max_len = max_len_from_bounds($anchor, $maxx);
+    }
 
     bless {
         options => $options,
         index => $index,
         selected => $selected,
+        max_len => $max_len,
+        material => $opts{-material},
         submitted => 0,
         cancelled => 0,
     }, __PACKAGE__;
@@ -55,6 +72,30 @@ sub move_next($self) {
     return 0 if $count == 0;
     $self->{index} = ($self->{index} + 1) % $count;
     1;
+}
+
+sub display_text($self) {
+    my $options = $self->{options};
+    my $text = $options->[ $self->{index} ];
+    my $max_len = $self->{max_len};
+    return $text if !defined $max_len;
+    $text = substr($text, 0, $max_len) if length($text) > $max_len;
+    my $pad = $max_len - length($text);
+    $text .= ' ' x $pad if $pad > 0;
+    $text;
+}
+
+sub render($self, $renderer, $pos_vec, %opts) {
+    my %style;
+    if (defined $self->{material}) {
+        my $mapper = $renderer->mapper;
+        if (ref($mapper) && $mapper->can('style')) {
+            %style = $mapper->style($self->{material})->%*;
+        } else {
+            %style = $mapper->($self->{material})->%*;
+        }
+    }
+    $renderer->render_text($pos_vec, $self->display_text, %style, %opts);
 }
 
 sub update($self, @events) {

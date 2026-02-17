@@ -11,14 +11,27 @@ use Event;
 getters qw(
     text
     cursor
+    material
     max_len
     submitted
     cancelled
 );
 
+sub max_len_from_bounds($anchor, $maxx) {
+    return undef if !defined $anchor || !defined $maxx;
+    my $x = ref($anchor) && $anchor->can('x') ? $anchor->x : $anchor;
+    my $max = $maxx - $x - 1;
+    return undef if $max < 0;
+    $max;
+}
+
 sub new(%opts) {
     my $text = $opts{-text} // '';
     my $max_len = $opts{-max_len};
+    if (!defined $max_len && defined $opts{-max_from}) {
+        my ($anchor, $maxx) = $opts{-max_from}->@*;
+        $max_len = max_len_from_bounds($anchor, $maxx);
+    }
     if (defined $max_len && length($text) > $max_len) {
         $text = substr($text, 0, $max_len);
     }
@@ -29,6 +42,7 @@ sub new(%opts) {
     bless {
         text => $text,
         cursor => $cursor,
+        material => $opts{-material},
         max_len => $max_len,
         submitted => 0,
         cancelled => 0,
@@ -56,6 +70,29 @@ sub clear($self) {
     $self->{text} = '';
     $self->{cursor} = 0;
     return $changed;
+}
+
+sub display_text($self) {
+    my $text = $self->{text} // '';
+    my $max_len = $self->{max_len};
+    return $text if !defined $max_len;
+    $text = substr($text, 0, $max_len) if length($text) > $max_len;
+    my $pad = $max_len - length($text);
+    $text .= ' ' x $pad if $pad > 0;
+    $text;
+}
+
+sub render($self, $renderer, $pos_vec, %opts) {
+    my %style;
+    if (defined $self->{material}) {
+        my $mapper = $renderer->mapper;
+        if (ref($mapper) && $mapper->can('style')) {
+            %style = $mapper->style($self->{material})->%*;
+        } else {
+            %style = $mapper->($self->{material})->%*;
+        }
+    }
+    $renderer->render_text($pos_vec, $self->display_text, %style, %opts);
 }
 
 sub insert($self, $text) {

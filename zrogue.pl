@@ -67,7 +67,7 @@ EOF
 
     getters qw(
         focus pos lastpos geo renderer z bg_topleft surface clear_surface
-        text_input checkbox_input select_input active_input select_max
+        text_input checkbox_input select_input active_input
     );
 
     sub from_xyz(
@@ -84,15 +84,8 @@ EOF
     ) {
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
         my $layout = Skin::layout($geo);
-        my $minx = $layout->{minx};
         my $maxx = $layout->{maxx};
         my $maxy = $layout->{maxy};
-        my $input_pos = $geo->points->{INP};
-        my $input_max = defined $input_pos ? ($maxx - $input_pos->x - 1) : undef;
-        $input_max = undef if defined $input_max && $input_max < 0;
-        my $select_pos = $geo->points->{SV};
-        my $select_max = defined $select_pos ? ($maxx - $select_pos->x - 1) : undef;
-        $select_max = undef if defined $select_max && $select_max < 0;
         my $bg_topleft = $layout->{topleft};
         my $mapper = $renderer->mapper;
         my $def_style = $mapper->style('DEFAULT');
@@ -108,9 +101,14 @@ EOF
             -shadow => 'SHADOW_BG',
             -defaults => \@defaults,
         );
-        my $text_input = TextInput::new(-max_len => $input_max);
+        my $text_input = TextInput::new(
+            -max_from => [$geo->points->{INP}, $maxx],
+        );
         my $checkbox_input = CheckboxInput::new();
-        my $select_input = SelectInput::new(-options => [qw(ONE TWO THREE)]);
+        my $select_input = SelectInput::new(
+            -options => [qw(ONE TWO THREE)],
+            -max_from => [$geo->points->{SV}, $maxx],
+        );
         bless {
             focus => undef,
             status => undef,
@@ -125,7 +123,6 @@ EOF
             text_input => $text_input,
             checkbox_input => $checkbox_input,
             select_input => $select_input,
-            select_max => $select_max,
             active_input => undef,
             z => $z,
         }, __PACKAGE__;
@@ -227,39 +224,25 @@ EOF
         my %input_opts = $self->{active_input} && $self->{active_input} eq 'text'
             ? (-attrs => ATTR_REVERSE)
             : ();
-        my $input_text = $self->{text_input}->text;
-        if (defined $self->{text_input}->max_len) {
-            my $pad = $self->{text_input}->max_len - length($input_text);
-            $input_text .= ' ' x $pad if $pad > 0;
-        }
-        $self->renderer->render_text(
+        $self->{text_input}->render(
+            $self->renderer,
             $self->pos + $self->geo->points->{INP},
-            $input_text,
             %input_opts,
         );
-        my $check = $self->{checkbox_input}->checked ? '[x]' : '[ ]';
         my %check_opts = $self->{active_input} && $self->{active_input} eq 'checkbox'
             ? (-attrs => ATTR_REVERSE)
             : ();
-        $self->renderer->render_text(
+        $self->{checkbox_input}->render(
+            $self->renderer,
             $self->pos + $self->geo->points->{C},
-            $check,
             %check_opts,
         );
-        my $options = $self->{select_input}->options;
-        my $sel_text = $options->[ $self->{select_input}->index ];
-        if (defined $self->{select_max}) {
-            $sel_text = substr($sel_text, 0, $self->{select_max})
-                if length($sel_text) > $self->{select_max};
-            my $pad = $self->{select_max} - length($sel_text);
-            $sel_text .= ' ' x $pad if $pad > 0;
-        }
         my %select_opts = $self->{active_input} && $self->{active_input} eq 'select'
             ? (-attrs => ATTR_REVERSE)
             : ();
-        $self->renderer->render_text(
+        $self->{select_input}->render(
+            $self->renderer,
             $self->pos + $self->geo->points->{SV},
-            $sel_text,
             %select_opts,
         );
         my $time = $self->{time} // POSIX::strftime("%H:%M:%S", localtime);
@@ -308,7 +291,6 @@ EOF
         my $pos = Matrix3::Vec::from_xy($x, $y);
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
         my $layout = Skin::layout($geo);
-        my $minx = $layout->{minx};
         my $maxy = $layout->{maxy};
         my $bg_topleft = $layout->{topleft};
         my $mapper = $renderer->mapper;
