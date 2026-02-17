@@ -59,3 +59,46 @@ sub update($self, @events) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+CheckboxInput
+
+=head1 SYNOPSIS
+
+    use CheckboxInput;
+    my $cb = CheckboxInput::new();
+    $cb->update(@events);
+
+=head1 DESCRIPTION
+
+CheckboxInput tracks a boolean value that can be toggled with keyboard
+input. It also exposes submitted/cancelled flags.
+
+=head1 METHODS
+
+=over 4
+
+=item new(%opts)
+
+Creates a checkbox. Option C<-checked> sets the initial state.
+
+=item update(@events)
+
+Handles key presses:
+
+    space or 'x' toggles
+    Enter sets submitted
+    Esc sets cancelled
+
+=item toggle
+
+Flips the checked state.
+
+=item clear_flags
+
+Resets submitted/cancelled flags.
+
+=back

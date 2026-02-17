@@ -307,3 +307,34 @@ my $pause_banner = <<'EOF';
 EOF
 
 1;
+
+__END__
+
+=head1 NAME
+
+Views
+
+=head1 SYNOPSIS
+
+    use Views qw($START $INVENTORY);
+    my $start = $START;
+
+=head1 DESCRIPTION
+
+Views contains large ASCII/Unicode UI templates used by the game. The
+strings include labeled anchors (C<$NAME>, C<@REGION>) for Geometry3
+parsing.
+
+=head1 EXPORTS
+
+=over 4
+
+=item $START
+
+Start screen view template.
+
+=item $INVENTORY
+
+Inventory screen view template.
+
+=back

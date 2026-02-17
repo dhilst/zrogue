@@ -76,3 +76,46 @@ sub _drain($self) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+UTF8Buffer
+
+=head1 SYNOPSIS
+
+    use UTF8Buffer;
+
+    my $buf = UTF8Buffer::new();
+    my @chars = $buf->push_bytes($bytes);
+    push @chars, $buf->drain;
+
+=head1 DESCRIPTION
+
+UTF8Buffer accumulates raw bytes and emits decoded UTF-8 characters when
+complete sequences are available. Incomplete sequences are kept in an
+internal buffer until more bytes are received.
+
+=head1 METHODS
+
+=over 4
+
+=item new
+
+Creates a new buffer.
+
+=item push_bytes($bytes)
+
+Appends raw bytes to the internal buffer and returns any decoded characters.
+
+=item drain
+
+Attempts to decode any complete sequences currently buffered and returns
+decoded characters.
+
+=item clear
+
+Clears the internal buffer.
+
+=back

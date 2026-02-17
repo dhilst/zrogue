@@ -299,3 +299,56 @@ sub reset($self) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Buffer2D
+
+=head1 SYNOPSIS
+
+    use Buffer2D;
+    my $buf = Buffer2D::new("l4", $H, $W, \@defaults, -autoclip => 1);
+    $buf->set($col, $row, [@values]);
+    my @cell = $buf->get($col, $row);
+
+=head1 DESCRIPTION
+
+Buffer2D is a 2D packed buffer for per-cell payloads. It stores a grid
+of fixed-size packed records and provides helpers for indexed reads,
+writes, and batched updates. Optional autoclip protects out-of-bounds
+accesses by clipping writes and reads.
+
+=head1 METHODS
+
+=over 4
+
+=item new($packstr, $H, $W, $defaults, %opts)
+
+Creates a buffer with pack template C<$packstr> and default payload.
+If C<-autoclip> is true, out-of-range writes are clipped instead of
+throwing.
+
+=item get / set / update
+
+Read or write a single cell at C<($col, $row)>.
+
+=item get_multi / set_multi / update_multi
+
+Batch operations for a horizontal run of cells. Update merges defined
+fields into existing payloads.
+
+=item diff($other)
+
+Returns a list of changed spans between buffers.
+
+=item sync($other)
+
+Copies the raw buffer from another instance.
+
+=item reset
+
+Resets the buffer to the default payloads.
+
+=back

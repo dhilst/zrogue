@@ -46,9 +46,56 @@ package Utils::Array {
         @out;
     }
 
-    sub flatten(@values) {
-        map { $_->@* } @values;
-    }
+sub flatten(@values) {
+    map { $_->@* } @values;
+}
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Utils
+
+=head1 SYNOPSIS
+
+    use Utils qw(aref getters);
+
+=head1 DESCRIPTION
+
+Utils provides small helper functions used across the codebase. It also
+defines C<Utils::Array> helpers for array batching and flattening.
+
+=head1 FUNCTIONS
+
+=over 4
+
+=item aref(@values)
+
+Returns a reference to the argument list.
+
+=item getters(@fields)
+
+Defines simple accessors in the caller package.
+
+=back
+
+=head1 Utils::Array
+
+=over 4
+
+=item index_of($value, @array)
+
+Returns the index of the first matching element or -1.
+
+=item for_batch { ... } $size, \@array
+
+Iterates the array in fixed-size slices.
+
+=item flatten(@values)
+
+Flattens an array of arrayrefs.
+
+=back

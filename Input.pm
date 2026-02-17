@@ -78,3 +78,43 @@ sub DESTROY($self) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Input
+
+=head1 SYNOPSIS
+
+    use Input;
+    my $inp = Input::new();
+    my @events = $inp->poll(0.01);
+
+=head1 DESCRIPTION
+
+Input configures the terminal in raw mode, reads bytes from STDIN, and
+returns key press events. It uses UTF8Buffer to decode UTF-8 sequences
+into characters before generating events.
+
+=head1 METHODS
+
+=over 4
+
+=item new
+
+Creates a new Input handler and switches the terminal to raw mode.
+
+=item poll($timeout)
+
+Returns a list of Event objects read within the given timeout (in seconds).
+
+=item enable_raw_mode
+
+Sets non-canonical, no-echo input mode.
+
+=item restore_mode
+
+Restores the original terminal settings.
+
+=back

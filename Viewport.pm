@@ -45,14 +45,38 @@ sub move($self, $to_matrix) {
 
 __END__
 
+=head1 NAME
+
+Viewport
+
 =head1 SYNOPSIS
 
-Viewport allow you to get center, and corner positions from an initial position $pos,
-and dimmesions H x W. Then the user can use the following methods to get each position
+    use Viewport;
+    my $vp = Viewport::from_pos_hw($pos, $h, $w);
+    my $center = $vp->center;
+
+=head1 DESCRIPTION
+
+Viewport computes commonly used positions (center and corners) from a
+top-left position and dimensions. It uses the same coordinate system as
+the renderers where Y increases upward.
+
+=head1 METHODS
+
+=over 4
+
+=item from_pos_hw($pos_vec, $h, $w)
+
+Constructs a Viewport from a top-left position and size.
+
+=item move($matrix)
+
+Transforms all stored points by the given matrix.
+
+=back
 
 =head1 NOTES
 
-1. The Y grows UP, so bottomleft and bottomright are in -H negative values. This means
-   that the second row is -1 not 1. This is to keep Y grows upwards convetion.
-
+Y grows upward, so bottom positions have negative Y. This keeps the
+world space convention consistent with rendering.
 

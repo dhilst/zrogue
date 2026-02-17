@@ -94,3 +94,56 @@ sub to_sgr($text, $fg32, $bg32, @attrs) {
 
 
 1;
+
+__END__
+
+=head1 NAME
+
+Termlib
+
+=head1 SYNOPSIS
+
+    use Termlib;
+    my $term = Termlib::new();
+    $term->initscr;
+    $term->write("Hello", 0, 0);
+
+=head1 DESCRIPTION
+
+Termlib wraps Term::Cap and Term::ANSIColor for cursor movement and
+colored output. It provides basic terminal screen operations used by
+renderers.
+
+=head1 METHODS
+
+=over 4
+
+=item new
+
+Creates a Termlib instance with Term::Cap initialized.
+
+=item rows / cols
+
+Returns terminal dimensions.
+
+=item clear
+
+Clears the terminal and homes the cursor.
+
+=item write($text, $col, $row)
+
+Writes raw text at a position.
+
+=item write_color($text, $col, $row, $fg, $bg, $attrs)
+
+Writes text using 24-bit colors and attributes.
+
+=item write_vec($text, $pos_vec)
+
+Writes at the given Matrix3::Vec.
+
+=item initscr($default_value)
+
+Clears and fills the screen with the given character.
+
+=back

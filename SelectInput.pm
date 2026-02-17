@@ -86,3 +86,52 @@ sub update($self, @events) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+SelectInput
+
+=head1 SYNOPSIS
+
+    use SelectInput;
+    my $sel = SelectInput::new(-options => [qw(one two three)]);
+    $sel->update(@events);
+
+=head1 DESCRIPTION
+
+SelectInput keeps a list of options and a current index. The user can
+move the selection and confirm it.
+
+=head1 METHODS
+
+=over 4
+
+=item new(%opts)
+
+Creates a selector. Requires C<-options> arrayref. Optional C<-index>
+and C<-selected> set initial positions.
+
+=item update(@events)
+
+Handles key presses:
+
+    'k' moves up
+    'j' moves down
+    Enter selects current index and sets submitted
+    Esc sets cancelled
+
+=item move_prev
+
+Moves selection up (wraps).
+
+=item move_next
+
+Moves selection down (wraps).
+
+=item clear_flags
+
+Resets submitted/cancelled flags.
+
+=back

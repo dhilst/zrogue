@@ -53,3 +53,48 @@ sub to_str($self, @ignored) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Event
+
+=head1 SYNOPSIS
+
+    use Event;
+    my $ev = Event::key_press("a");
+    say $ev->type;
+
+=head1 DESCRIPTION
+
+Event defines a small event type system for input handling. It currently
+supports key press events with a character and code.
+
+=head1 TYPES
+
+=over 4
+
+=item Event::Type
+
+Contains constants like C<KEY_PRESS>.
+
+=item Event::KeyCode
+
+Contains constants like C<ENTER> and C<ESC>.
+
+=item Event::KeyPress
+
+Payload type with C<char> and C<code>.
+
+=back
+
+=head1 CONSTRUCTORS
+
+=over 4
+
+=item key_press($char)
+
+Builds a C<KEY_PRESS> event with C<char> and its ordinal C<code>.
+
+=back

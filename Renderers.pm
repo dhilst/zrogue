@@ -440,3 +440,63 @@ package Renderers::DoubleBuffering {
 
 
 1;
+
+__END__
+
+=head1 NAME
+
+Renderers
+
+=head1 SYNOPSIS
+
+    use Renderers;
+    my $renderer = Renderers::DoubleBuffering::new($T, $H, $W, $mapper, ' ');
+    $renderer->initscr;
+    $renderer->render_text($pos, "Hello");
+    $renderer->flush;
+
+=head1 DESCRIPTION
+
+Renderers provides two renderer implementations used by the TUI:
+
+Renderers::Naive writes directly to the terminal for every draw call.
+Renderers::DoubleBuffering writes into a back buffer and flushes the
+diff to the terminal.
+
+Both implement a shared API for text, quads, geometry, lines, and
+buffer blits.
+
+=head1 COMMON METHODS
+
+=over 4
+
+=item render_text($pos_vec, $text, %opts)
+
+Renders text at a position. Supports C<-fg>, C<-bg>, C<-attrs> and
+justification via C<-justify>.
+
+=item render_quad($pos_vec, $quad)
+
+Renders a rectangle from a Quad material.
+
+=item render_geometry($pos_vec, $geo)
+
+Renders a Geometry3 payload at an offset.
+
+=item render_line($pos_start, $pos_end, $material)
+
+Renders a line with the given material.
+
+=item render_buffer($pos_vec, $buffer)
+
+Blits a Buffer2D onto the destination (clipped).
+
+=item initscr
+
+Clears the terminal and fills it with the default background.
+
+=item flush
+
+No-op for Naive; emits diffs for DoubleBuffering.
+
+=back

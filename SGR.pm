@@ -50,3 +50,39 @@ sub attrs($attrs) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+SGR
+
+=head1 SYNOPSIS
+
+    use SGR qw(:attrs);
+    my $fg = SGR::fg(0xff0000);
+    my $bg = SGR::bg(0x000000);
+    my @attrs = SGR::attrs(ATTR_BOLD | ATTR_UNDERLINE);
+
+=head1 DESCRIPTION
+
+SGR provides helpers for ANSI color and attribute strings compatible
+with Term::ANSIColor. It also defines attribute bitmasks.
+
+=head1 FUNCTIONS
+
+=over 4
+
+=item fg($rgb24)
+
+Returns a Term::ANSIColor 24-bit foreground string.
+
+=item bg($rgb24)
+
+Returns a Term::ANSIColor 24-bit background string.
+
+=item attrs($mask)
+
+Expands a bitmask into a list of attribute strings.
+
+=back
