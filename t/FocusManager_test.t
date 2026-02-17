@@ -7,11 +7,13 @@ use Event;
 
 {
     package WidgetStub;
-    sub new($name) { bless { name => $name, focus => 0, blur => 0 }, __PACKAGE__ }
+    sub new($name) { bless { name => $name, focus => 0, blur => 0, updates => 0 }, __PACKAGE__ }
     sub focus($self) { $self->{focus}++ }
     sub blur($self) { $self->{blur}++ }
+    sub update($self, @events) { $self->{updates} += scalar @events; return @events ? 1 : 0; }
     sub focus_count($self) { $self->{focus} }
     sub blur_count($self) { $self->{blur} }
+    sub update_count($self) { $self->{updates} }
 }
 
 sub key($ch) { Event::key_press($ch) }
@@ -50,6 +52,15 @@ subtest 'cycle wraps' => sub {
     $fm->update(key("\t"));
     is($w2->blur_count, 1, 'second blurred');
     is($w1->focus_count, 1, 'wraps to first');
+};
+
+subtest 'routes events to current widget' => sub {
+    my $w1 = WidgetStub::new('a');
+    my $w2 = WidgetStub::new('b');
+    my $fm = FocusManager::new([$w1, $w2]);
+    my @changed = $fm->update(key('x'));
+    is($w1->update_count, 1, 'current widget updated');
+    is(scalar @changed, 1, 'changed list contains current');
 };
 
 subtest 'add and remove widgets' => sub {

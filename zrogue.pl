@@ -30,6 +30,7 @@ use Quad;
 use TextInput;
 use CheckboxInput;
 use SelectInput;
+use FocusManager;
 
 package Menu {
     no autovivification;
@@ -85,7 +86,6 @@ EOF
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
         my $layout = Skin::layout($geo);
         my $maxx = $layout->{maxx};
-        my $maxy = $layout->{maxy};
         my $bg_topleft = $layout->{topleft};
         my $mapper = $renderer->mapper;
         my $def_style = $mapper->style('DEFAULT');
@@ -135,6 +135,20 @@ EOF
         }, __PACKAGE__;
     }
 
+    sub focus($self) {
+        $self->{has_focus} = 1;
+    }
+
+    sub blur($self) {
+        $self->{has_focus} = 0;
+        if ($self->{active_input}) {
+            $self->{active_input} = undef;
+            $self->{text_input}->blur;
+            $self->{checkbox_input}->blur;
+            $self->{select_input}->blur;
+        }
+    }
+
     sub update($self, @events) {
         my $changed = 0;
         my $idx = Utils::Array::index_of($self->{focus} // 'D', @CYCLES);
@@ -174,22 +188,22 @@ EOF
                 $changed = 1;
             } elsif ($code == Event::KeyCode::ENTER && defined $self->focus) {
                 if ($self->{focus} eq 'I') {
-                    $self->{active_input} = 'text';
                     $self->{text_input}->clear_flags;
+                    $self->{active_input} = 'text';
                     $self->{text_input}->focus;
                     $self->{checkbox_input}->blur;
                     $self->{select_input}->blur;
                     $changed = 1;
                 } elsif ($self->{focus} eq 'B') {
-                    $self->{active_input} = 'checkbox';
                     $self->{checkbox_input}->clear_flags;
+                    $self->{active_input} = 'checkbox';
                     $self->{text_input}->blur;
                     $self->{checkbox_input}->focus;
                     $self->{select_input}->blur;
                     $changed = 1;
                 } elsif ($self->{focus} eq 'S') {
-                    $self->{active_input} = 'select';
                     $self->{select_input}->clear_flags;
+                    $self->{active_input} = 'select';
                     $self->{text_input}->blur;
                     $self->{checkbox_input}->blur;
                     $self->{select_input}->focus;
@@ -291,6 +305,7 @@ EOF
         bg_topleft
         surface
         clear_surface
+        has_focus
         z
     );
 
@@ -298,7 +313,6 @@ EOF
         my $pos = Matrix3::Vec::from_xy($x, $y);
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
         my $layout = Skin::layout($geo);
-        my $maxy = $layout->{maxy};
         my $bg_topleft = $layout->{topleft};
         my $mapper = $renderer->mapper;
         my $def_style = $mapper->style('DEFAULT');
@@ -330,9 +344,13 @@ EOF
             clear_surface => $clear_surface,
             question => $question,
             answer => undef,
+            has_focus => 0,
             z => $z,
         }, __PACKAGE__;
     }
+
+    sub focus($self) { $self->{has_focus} = 1; }
+    sub blur($self) { $self->{has_focus} = 0; }
 
     sub update($self, @events) {
         my $changed = 0;
@@ -424,10 +442,19 @@ my $line_d = Matrix3::Vec::from_xy(-5, 12);
 my $question = Question::from_xyz(0, 20, 1, "Hello?", $renderer);
 my $menu = Menu::from_xyz(10, 0, 2, $renderer);
 
-my @wids = (
+my @initial_widgets = (
     $question,
     $menu,
 );
+my $focus_index = 0;
+for my $i (0 .. $#initial_widgets) {
+    $focus_index = $i
+        if $initial_widgets[$i]->{z} > $initial_widgets[$focus_index]->{z};
+}
+my $focus_mgr = FocusManager::new([]);
+$focus_mgr->add_widget($_) for @initial_widgets;
+$focus_mgr->cycle($focus_index) if $focus_index > 0;
+my $wids = $focus_mgr->widgets;
 
 sub render_static {
     $renderer->render_style($hello_pos, length("Hello world"), -bg => 0x0000ff);
@@ -437,7 +464,7 @@ sub render_static {
 }
 
 sub wids {
-    sort { $b->{z} <=> $a->{z} } @wids;
+    sort { $b->{z} <=> $a->{z} } $wids->@*;
 }
 
 sub render_all {
@@ -446,7 +473,7 @@ sub render_all {
 }
 
 sub erase_all {
-    $_->erase() for @wids;
+    $_->erase() for $wids->@*;
 }
 
 sub handle_resize {
@@ -457,8 +484,8 @@ sub handle_resize {
                 ->mul_mat_inplace($REFLECT_X);
     $renderer = Renderers::DoubleBuffering::new($terminal_space, $ROWS, $COLS - 1, $mapper, ' ');
     $renderer->initscr();
-    $_->{renderer} = $renderer for @wids;
-    $_->{lastpos} = $_->{pos}->copy for @wids;
+    $_->{renderer} = $renderer for $wids->@*;
+    $_->{lastpos} = $_->{pos}->copy for $wids->@*;
     render_static();
     render_all();
 }
@@ -472,23 +499,13 @@ while (1) {
         handle_resize();
         next;
     }
-    my $z_changed = 0;
     for my $event (@events) {
         if ($event->type eq Event::Type::KEY_PRESS
             && $event->payload->char eq 'q') {
             last OUT;
-        } elsif ($event->type eq Event::Type::KEY_PRESS
-            && $event->payload->char eq 's') {
-            ($menu->{z}, $question->{z}) = ($question->z, $menu->z);
-            $z_changed = 1;
         }
     }
-    my @changed = grep { $_->update(@events) } @wids;
-    if ($z_changed) {
-        erase_all();
-        render_all();
-        next;
-    }
+    my @changed = $focus_mgr->update(@events);
     if (@changed) {
         $_->erase() for @changed;
         my %changed = map { $_ => 1 } @changed;

@@ -56,15 +56,37 @@ sub cycle($self, $delta = 1) {
 }
 
 sub update($self, @events) {
-    my $changed = 0;
+    my @changed;
+    my %seen;
+    my $mark = sub ($widget) {
+        return if !defined $widget;
+        my $id = refaddr($widget);
+        return if $seen{$id}++;
+        push @changed, $widget;
+    };
+    my $current = $self->current;
+    my @pending;
     for my $event (@events) {
         next unless $event->type eq Event::Type::KEY_PRESS;
         my $char = $event->payload->char;
         if ($char eq $self->{key}) {
-            $changed = 1 if $self->cycle(1);
+            if ($current && @pending) {
+                $mark->($current) if $current->update(@pending);
+                @pending = ();
+            }
+            my $old = $current;
+            my $new = $self->cycle(1);
+            $mark->($old);
+            $mark->($new);
+            $current = $self->current;
+            next;
         }
+        push @pending, $event;
     }
-    $changed;
+    if ($current) {
+        $mark->($current) if $current->update(@pending);
+    }
+    return wantarray ? @changed : scalar @changed;
 }
 
 sub add_widget($self, $widget) {
@@ -147,7 +169,10 @@ An empty widget list is allowed; focus will be unset.
 
 =item update(@events)
 
-Processes events and advances focus when the cycle key is pressed.
+Processes events, advances focus when the cycle key is pressed, and
+forwards non-cycle events to the focused widget's C<update>.
+In list context returns widgets that should be re-rendered; in scalar
+context returns the count.
 
 =item add_widget($widget)
 
