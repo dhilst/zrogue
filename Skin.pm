@@ -25,6 +25,23 @@ sub _bounds($geo) {
     ($minx, $maxx, $miny, $maxy);
 }
 
+sub layout($geo) {
+    confess "missing geometry" unless defined $geo;
+    my ($minx, $maxx, $miny, $maxy) = _bounds($geo);
+    my $width = $maxx - $minx + 1;
+    my $height = $maxy - $miny + 1;
+    return {
+        minx => $minx,
+        maxx => $maxx,
+        miny => $miny,
+        maxy => $maxy,
+        width => $width,
+        height => $height,
+        topleft => Matrix3::Vec::from_xy($minx, $maxy),
+        geo_offset => Matrix3::Vec::from_xy(-$minx, -$maxy),
+    };
+}
+
 sub from_geometry($geo, %opts) {
     confess "missing geometry" unless defined $geo;
     my $material = $opts{-material};
@@ -34,12 +51,14 @@ sub from_geometry($geo, %opts) {
     my $bg = $opts{-bg};
     confess "missing bg material" unless defined $bg;
     my $shadow = $opts{-shadow};
+    my $clear = $opts{-clear} // 'DEFAULT_BG';
     my $blank = $opts{-blank} // ' ';
     my $autoclip = exists $opts{-autoclip} ? $opts{-autoclip} : 1;
 
-    my ($minx, $maxx, $miny, $maxy) = _bounds($geo);
-    my $bg_w = $maxx - $minx + 1;
-    my $bg_h = $maxy - $miny + 1;
+    my $layout = layout($geo);
+    my ($minx, $maxx, $miny, $maxy) = @{$layout}{qw(minx maxx miny maxy)};
+    my $bg_w = $layout->{width};
+    my $bg_h = $layout->{height};
     my $extra = defined $shadow ? 1 : 0;
     my $surface_w = $bg_w + $extra;
     my $surface_h = $bg_h + $extra;
@@ -58,8 +77,13 @@ sub from_geometry($geo, %opts) {
         -defaults => $defaults,
         -blank => $blank,
         -autoclip => $autoclip);
+    my $clear_surface = Surface::new($surface_h, $surface_w,
+        -material => $material,
+        -defaults => $defaults,
+        -blank => $blank,
+        -autoclip => $autoclip);
 
-    my $geo_offset = Matrix3::Vec::from_xy(-$minx, -$maxy);
+    my $geo_offset = $layout->{geo_offset};
     my $bg_quad = Quad::from_wh($bg_w, $bg_h, $bg);
     $surface->render_quad(Matrix3::Vec::from_xy(0, 0), $bg_quad);
 
@@ -79,7 +103,10 @@ sub from_geometry($geo, %opts) {
     }
 
     $surface->render_geometry($geo_offset, $geo);
-    return $surface;
+    my $clear_quad = Quad::from_wh($surface_w, $surface_h, $clear);
+    $clear_surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
+
+    return wantarray ? ($surface, $clear_surface) : $surface;
 }
 
 1;
@@ -103,7 +130,8 @@ Skin
 
 Skin builds a Surface from a Geometry3 payload. It fills a background
 quad, optionally draws a shadow on the right and bottom edges, and then
-renders the geometry on top.
+renders the geometry on top. In list context it also returns a matching
+clean surface for erase operations.
 
 =head1 FUNCTIONS
 
@@ -116,9 +144,15 @@ Creates and returns a Surface. Options:
 - C<-material> MaterialMapper instance (required)
 - C<-bg> background material name (required)
 - C<-shadow> shadow material name (optional)
+- C<-clear> clear material name (default: C<DEFAULT_BG>)
 - C<-defaults> Buffer2D defaults arrayref (optional)
 - C<-blank> glyph used for fills (optional)
 - C<-autoclip> Surface autoclip flag (optional)
 
 =back
 
+=item layout($geo)
+
+Returns a hashref containing bounds, dimensions, and useful offsets:
+C<minx>, C<maxx>, C<miny>, C<maxy>, C<width>, C<height>, C<topleft>,
+and C<geo_offset>.

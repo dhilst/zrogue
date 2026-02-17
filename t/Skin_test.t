@@ -20,7 +20,7 @@ subtest 'skin with shadow' => sub {
     });
     my $geo = Geometry3::from_str("AB\nCD");
 
-    my $surface = Skin::from_geometry($geo,
+    my ($surface, $clear_surface) = Skin::from_geometry($geo,
         -material => $mat,
         -bg => 'BG',
         -shadow => 'SHADOW',
@@ -39,6 +39,10 @@ subtest 'skin with shadow' => sub {
     is_deeply(cell_at($surface, 2, -2), [ord(' '), -1, 2, -1], 'bottom right shadow');
     is_deeply(cell_at($surface, 1, -2), [ord(' '), -1, 2, -1], 'bottom shadow');
     is_deeply(cell_at($surface, 0, -2), [ord(' '), -1, 0, -1], 'bottom default');
+
+    is($clear_surface->width, 3, 'clear surface width');
+    is($clear_surface->height, 3, 'clear surface height');
+    is_deeply(cell_at($clear_surface, 0, 0), [ord(' '), -1, 0, -1], 'clear surface default');
 };
 
 subtest 'skin without shadow' => sub {
@@ -48,11 +52,15 @@ subtest 'skin without shadow' => sub {
         return {};
     });
     my $geo = Geometry3::from_str("X");
-    my $surface = Skin::from_geometry($geo, -material => $mat, -bg => 'BG');
+    my ($surface, $clear_surface) = Skin::from_geometry($geo,
+        -material => $mat,
+        -bg => 'BG',
+    );
 
     is($surface->width, 1, 'width without shadow');
     is($surface->height, 1, 'height without shadow');
     is_deeply(cell_at($surface, 0, 0), [ord('X'), -1, 3, -1], 'single cell');
+    is_deeply(cell_at($clear_surface, 0, 0), [ord(' '), -1, 0, -1], 'clear surface default');
 };
 
 done_testing;

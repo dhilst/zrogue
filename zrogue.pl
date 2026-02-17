@@ -24,6 +24,7 @@ use Input;
 use Utils qw(aref);
 use Renderers;
 use Surface;
+use Skin;
 use SGR qw(:attrs);
 use Quad;
 use TextInput;
@@ -65,7 +66,7 @@ EOF
     );
 
     getters qw(
-        focus pos lastpos geo renderer z bg_quad bg_topleft surface clear_surface
+        focus pos lastpos geo renderer z bg_topleft surface clear_surface
         text_input checkbox_input select_input active_input select_max
     );
 
@@ -82,29 +83,17 @@ EOF
         $renderer
     ) {
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
-        my ($minx, $maxx, $miny, $maxy);
-        for my $po ($geo->@*) {
-            my ($p, $value) = $po->@*;
-            my ($x, $y) = $p->@*;
-            my $len = length($value);
-            $minx = $x if !defined $minx || $x < $minx;
-            my $x_end = $x + $len - 1;
-            $maxx = $x_end if !defined $maxx || $x_end > $maxx;
-            $miny = $y if !defined $miny || $y < $miny;
-            $maxy = $y if !defined $maxy || $y > $maxy;
-        }
-        my $bg_w = $maxx - $minx + 1;
-        my $bg_h = $maxy - $miny + 1;
+        my $layout = Skin::layout($geo);
+        my $minx = $layout->{minx};
+        my $maxx = $layout->{maxx};
+        my $maxy = $layout->{maxy};
         my $input_pos = $geo->points->{INP};
         my $input_max = defined $input_pos ? ($maxx - $input_pos->x - 1) : undef;
         $input_max = undef if defined $input_max && $input_max < 0;
         my $select_pos = $geo->points->{SV};
         my $select_max = defined $select_pos ? ($maxx - $select_pos->x - 1) : undef;
         $select_max = undef if defined $select_max && $select_max < 0;
-        my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'MENU_BG');
-        my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
-        my $surface_w = $bg_w + 1;
-        my $surface_h = $bg_h + 1;
+        my $bg_topleft = $layout->{topleft};
         my $material = $renderer->mapper;
         my $def_style = $material->style('DEFAULT');
         my @defaults = (
@@ -113,32 +102,12 @@ EOF
             $def_style->{-bg} // -1,
             $def_style->{-attrs} // -1,
         );
-        my $surface = Surface::new($surface_h, $surface_w,
+        my ($surface, $clear_surface) = Skin::from_geometry($geo,
             -material => $material,
-            -defaults => \@defaults);
-        my $clear_surface = Surface::new($surface_h, $surface_w,
-            -material => $material,
-            -defaults => \@defaults);
-        my $geo_offset = Matrix3::Vec::from_xy(-$bg_topleft->x, -$bg_topleft->y);
-
-        my $clear_quad = Quad::from_wh($surface_w, $surface_h, 'DEFAULT_BG');
-        $surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
-        $surface->render_quad(Matrix3::Vec::from_xy(0, 0), $bg_quad);
-        $surface->render_line(
-            Matrix3::Vec::from_xy($bg_w, -1),
-            Matrix3::Vec::from_xy($bg_w, -$bg_h),
-            'SHADOW_BG',
+            -bg => 'MENU_BG',
+            -shadow => 'SHADOW_BG',
+            -defaults => \@defaults,
         );
-        if ($bg_w > 1) {
-            $surface->render_line(
-                Matrix3::Vec::from_xy(1, -$bg_h),
-                Matrix3::Vec::from_xy($bg_w - 1, -$bg_h),
-                'SHADOW_BG',
-            );
-        }
-        $surface->render_geometry($geo_offset, $geo);
-
-        $clear_surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
         my $text_input = TextInput::new(-max_len => $input_max);
         my $checkbox_input = CheckboxInput::new();
         my $select_input = SelectInput::new(-options => [qw(ONE TWO THREE)]);
@@ -150,7 +119,6 @@ EOF
             pos => $pos,
             lastpos => $pos->copy,
             renderer => $renderer,
-            bg_quad => $bg_quad,
             bg_topleft => $bg_topleft,
             surface => $surface,
             clear_surface => $clear_surface,
@@ -330,7 +298,6 @@ EOF
         pos
         question
         renderer
-        bg_quad
         bg_topleft
         surface
         clear_surface
@@ -340,23 +307,10 @@ EOF
     sub from_xyz($x, $y, $z, $question, $renderer) {
         my $pos = Matrix3::Vec::from_xy($x, $y);
         my $geo = Geometry3::from_str($VIEW, -centerfy => 1);
-        my ($minx, $maxx, $miny, $maxy);
-        for my $po ($geo->@*) {
-            my ($p, $value) = $po->@*;
-            my ($x, $y) = $p->@*;
-            my $len = length($value);
-            $minx = $x if !defined $minx || $x < $minx;
-            my $x_end = $x + $len - 1;
-            $maxx = $x_end if !defined $maxx || $x_end > $maxx;
-            $miny = $y if !defined $miny || $y < $miny;
-            $maxy = $y if !defined $maxy || $y > $maxy;
-        }
-        my $bg_w = $maxx - $minx + 1;
-        my $bg_h = $maxy - $miny + 1;
-        my $bg_quad = Quad::from_wh($bg_w, $bg_h, 'QUESTION_BG');
-        my $bg_topleft = Matrix3::Vec::from_xy($minx, $maxy);
-        my $surface_w = $bg_w + 1;
-        my $surface_h = $bg_h + 1;
+        my $layout = Skin::layout($geo);
+        my $minx = $layout->{minx};
+        my $maxy = $layout->{maxy};
+        my $bg_topleft = $layout->{topleft};
         my $material = $renderer->mapper;
         my $def_style = $material->style('DEFAULT');
         my @defaults = (
@@ -365,42 +319,23 @@ EOF
             $def_style->{-bg} // -1,
             $def_style->{-attrs} // -1,
         );
-        my $surface = Surface::new($surface_h, $surface_w,
+        my ($surface, $clear_surface) = Skin::from_geometry($geo,
             -material => $material,
-            -defaults => \@defaults);
-        my $clear_surface = Surface::new($surface_h, $surface_w,
-            -material => $material,
-            -defaults => \@defaults);
-        my $geo_offset = Matrix3::Vec::from_xy(-$bg_topleft->x, -$bg_topleft->y);
-
-        $surface->render_quad(Matrix3::Vec::from_xy(0, 0), $bg_quad);
-        $surface->render_line(
-            Matrix3::Vec::from_xy($bg_w, -1),
-            Matrix3::Vec::from_xy($bg_w, -$bg_h),
-            'SHADOW_BG',
+            -bg => 'QUESTION_BG',
+            -shadow => 'SHADOW_BG',
+            -defaults => \@defaults,
         );
-        if ($bg_w > 1) {
-            $surface->render_line(
-                Matrix3::Vec::from_xy(1, -$bg_h),
-                Matrix3::Vec::from_xy($bg_w - 1, -$bg_h),
-                'SHADOW_BG',
-            );
-        }
-        $surface->render_geometry($geo_offset, $geo);
+        my $geo_offset = $layout->{geo_offset};
         $surface->render_text(
             $geo->points->{QUESTION} + $geo_offset,
             $question,
             -justify => 'center');
-
-        my $clear_quad = Quad::from_wh($surface_w, $surface_h, 'DEFAULT_BG');
-        $clear_surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
         bless {
             focus => "NO",
             geo => $geo,
             pos => $pos,
             lastpos => $pos->copy,
             renderer => $renderer,
-            bg_quad => $bg_quad,
             bg_topleft => $bg_topleft,
             surface => $surface,
             clear_surface => $clear_surface,
