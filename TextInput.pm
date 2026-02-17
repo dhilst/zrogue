@@ -11,10 +11,12 @@ use Event;
 getters qw(
     text
     cursor
-    material
+    material_focus
+    material_blur
     max_len
     submitted
     cancelled
+    focused
 );
 
 sub max_len_from_bounds($anchor, $maxx) {
@@ -42,10 +44,12 @@ sub new(%opts) {
     bless {
         text => $text,
         cursor => $cursor,
-        material => $opts{-material},
+        material_focus => $opts{-material_focus},
+        material_blur => $opts{-material_blur},
         max_len => $max_len,
         submitted => 0,
         cancelled => 0,
+        focused => 0,
     }, __PACKAGE__;
 }
 
@@ -82,14 +86,18 @@ sub display_text($self) {
     $text;
 }
 
+sub focus($self) { $self->{focused} = 1; }
+sub blur($self) { $self->{focused} = 0; }
+
 sub render($self, $renderer, $pos_vec, %opts) {
     my %style;
-    if (defined $self->{material}) {
+    my $material = $self->{focused} ? $self->{material_focus} : $self->{material_blur};
+    if (defined $material) {
         my $mapper = $renderer->mapper;
         if (ref($mapper) && $mapper->can('style')) {
-            %style = $mapper->style($self->{material})->%*;
+            %style = $mapper->style($material)->%*;
         } else {
-            %style = $mapper->($self->{material})->%*;
+            %style = $mapper->($material)->%*;
         }
     }
     $renderer->render_text($pos_vec, $self->display_text, %style, %opts);
@@ -198,3 +206,56 @@ sub update($self, @events) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+TextInput
+
+=head1 SYNOPSIS
+
+    use TextInput;
+    my $ti = TextInput::new(
+        -max_len => 20,
+        -material_focus => 'DEFAULT',
+        -material_blur => 'DEFAULT',
+    );
+    $ti->update(@events);
+
+=head1 DESCRIPTION
+
+TextInput collects text input and supports basic cursor editing.
+It can render itself using focus/blur materials.
+
+=head1 METHODS
+
+=over 4
+
+=item new(%opts)
+
+Creates a text input. Options:
+
+- C<-text> initial text
+- C<-max_len> maximum length
+- C<-max_from> C<[$anchor, $maxx]> helper to compute max length
+- C<-material_focus> material when focused
+- C<-material_blur> material when blurred
+
+=item update(@events)
+
+Processes key press events.
+
+=item focus / blur
+
+Marks the input as focused or blurred (affects rendering).
+
+=item render($renderer, $pos_vec, %opts)
+
+Renders the input text at the given position using focus/blur materials.
+
+=item display_text
+
+Returns the padded/truncated display string.
+
+=back

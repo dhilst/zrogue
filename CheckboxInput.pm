@@ -10,18 +10,22 @@ use Event;
 
 getters qw(
     checked
-    material
+    material_focus
+    material_blur
     submitted
     cancelled
+    focused
 );
 
 sub new(%opts) {
     my $checked = $opts{-checked} // 0;
     bless {
         checked => $checked ? 1 : 0,
-        material => $opts{-material},
+        material_focus => $opts{-material_focus},
+        material_blur => $opts{-material_blur},
         submitted => 0,
         cancelled => 0,
+        focused => 0,
     }, __PACKAGE__;
 }
 
@@ -39,14 +43,18 @@ sub display_text($self) {
     $self->{checked} ? '[x]' : '[ ]';
 }
 
+sub focus($self) { $self->{focused} = 1; }
+sub blur($self) { $self->{focused} = 0; }
+
 sub render($self, $renderer, $pos_vec, %opts) {
     my %style;
-    if (defined $self->{material}) {
+    my $material = $self->{focused} ? $self->{material_focus} : $self->{material_blur};
+    if (defined $material) {
         my $mapper = $renderer->mapper;
         if (ref($mapper) && $mapper->can('style')) {
-            %style = $mapper->style($self->{material})->%*;
+            %style = $mapper->style($material)->%*;
         } else {
-            %style = $mapper->($self->{material})->%*;
+            %style = $mapper->($material)->%*;
         }
     }
     $renderer->render_text($pos_vec, $self->display_text, %style, %opts);
@@ -94,7 +102,8 @@ CheckboxInput
 =head1 DESCRIPTION
 
 CheckboxInput tracks a boolean value that can be toggled with keyboard
-input. It also exposes submitted/cancelled flags.
+input. It also exposes submitted/cancelled flags and supports focused
+rendering styles.
 
 =head1 METHODS
 
@@ -102,7 +111,11 @@ input. It also exposes submitted/cancelled flags.
 
 =item new(%opts)
 
-Creates a checkbox. Option C<-checked> sets the initial state.
+Creates a checkbox. Options:
+
+- C<-checked> initial state
+- C<-material_focus> material when focused
+- C<-material_blur> material when blurred
 
 =item update(@events)
 
@@ -119,5 +132,13 @@ Flips the checked state.
 =item clear_flags
 
 Resets submitted/cancelled flags.
+
+=item focus / blur
+
+Marks the widget as focused or blurred.
+
+=item render($renderer, $pos_vec, %opts)
+
+Renders the checkbox using focus/blur materials.
 
 =back

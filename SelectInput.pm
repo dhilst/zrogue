@@ -13,9 +13,11 @@ getters qw(
     index
     selected
     max_len
-    material
+    material_focus
+    material_blur
     submitted
     cancelled
+    focused
 );
 
 sub max_len_from_bounds($anchor, $maxx) {
@@ -49,9 +51,11 @@ sub new(%opts) {
         index => $index,
         selected => $selected,
         max_len => $max_len,
-        material => $opts{-material},
+        material_focus => $opts{-material_focus},
+        material_blur => $opts{-material_blur},
         submitted => 0,
         cancelled => 0,
+        focused => 0,
     }, __PACKAGE__;
 }
 
@@ -85,14 +89,18 @@ sub display_text($self) {
     $text;
 }
 
+sub focus($self) { $self->{focused} = 1; }
+sub blur($self) { $self->{focused} = 0; }
+
 sub render($self, $renderer, $pos_vec, %opts) {
     my %style;
-    if (defined $self->{material}) {
+    my $material = $self->{focused} ? $self->{material_focus} : $self->{material_blur};
+    if (defined $material) {
         my $mapper = $renderer->mapper;
         if (ref($mapper) && $mapper->can('style')) {
-            %style = $mapper->style($self->{material})->%*;
+            %style = $mapper->style($material)->%*;
         } else {
-            %style = $mapper->($self->{material})->%*;
+            %style = $mapper->($material)->%*;
         }
     }
     $renderer->render_text($pos_vec, $self->display_text, %style, %opts);
@@ -143,7 +151,8 @@ SelectInput
 =head1 DESCRIPTION
 
 SelectInput keeps a list of options and a current index. The user can
-move the selection and confirm it.
+move the selection and confirm it. It also supports focused rendering
+styles.
 
 =head1 METHODS
 
@@ -152,7 +161,12 @@ move the selection and confirm it.
 =item new(%opts)
 
 Creates a selector. Requires C<-options> arrayref. Optional C<-index>
-and C<-selected> set initial positions.
+and C<-selected> set initial positions. Options:
+
+- C<-max_len> maximum display width
+- C<-max_from> C<[$anchor, $maxx]> helper to compute max length
+- C<-material_focus> material when focused
+- C<-material_blur> material when blurred
 
 =item update(@events)
 
@@ -174,5 +188,13 @@ Moves selection down (wraps).
 =item clear_flags
 
 Resets submitted/cancelled flags.
+
+=item focus / blur
+
+Marks the widget as focused or blurred.
+
+=item render($renderer, $pos_vec, %opts)
+
+Renders the current option using focus/blur materials.
 
 =back

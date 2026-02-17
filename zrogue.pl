@@ -103,11 +103,18 @@ EOF
         );
         my $text_input = TextInput::new(
             -max_from => [$geo->points->{INP}, $maxx],
+            -material_focus => 'INPUT_FOCUS',
+            -material_blur => 'INPUT_BLUR',
         );
-        my $checkbox_input = CheckboxInput::new();
+        my $checkbox_input = CheckboxInput::new(
+            -material_focus => 'INPUT_FOCUS',
+            -material_blur => 'INPUT_BLUR',
+        );
         my $select_input = SelectInput::new(
             -options => [qw(ONE TWO THREE)],
             -max_from => [$geo->points->{SV}, $maxx],
+            -material_focus => 'INPUT_FOCUS',
+            -material_blur => 'INPUT_BLUR',
         );
         bless {
             focus => undef,
@@ -138,6 +145,9 @@ EOF
             if ($self->{active_input}) {
                 if ($code == Event::KeyCode::ESC) {
                     $self->{active_input} = undef;
+                    $self->{text_input}->blur;
+                    $self->{checkbox_input}->blur;
+                    $self->{select_input}->blur;
                     $changed = 1;
                     next;
                 }
@@ -166,14 +176,23 @@ EOF
                 if ($self->{focus} eq 'I') {
                     $self->{active_input} = 'text';
                     $self->{text_input}->clear_flags;
+                    $self->{text_input}->focus;
+                    $self->{checkbox_input}->blur;
+                    $self->{select_input}->blur;
                     $changed = 1;
                 } elsif ($self->{focus} eq 'B') {
                     $self->{active_input} = 'checkbox';
                     $self->{checkbox_input}->clear_flags;
+                    $self->{text_input}->blur;
+                    $self->{checkbox_input}->focus;
+                    $self->{select_input}->blur;
                     $changed = 1;
                 } elsif ($self->{focus} eq 'S') {
                     $self->{active_input} = 'select';
                     $self->{select_input}->clear_flags;
+                    $self->{text_input}->blur;
+                    $self->{checkbox_input}->blur;
+                    $self->{select_input}->focus;
                     $changed = 1;
                 } else {
                     my $status = sprintf "%s selected", $NAMES{$self->{focus}};
@@ -221,29 +240,17 @@ EOF
         if (defined $self->{status}) {
             $self->renderer->render_text($self->pos + $self->geo->points->{R}, $self->{status})
         }
-        my %input_opts = $self->{active_input} && $self->{active_input} eq 'text'
-            ? (-attrs => ATTR_REVERSE)
-            : ();
         $self->{text_input}->render(
             $self->renderer,
             $self->pos + $self->geo->points->{INP},
-            %input_opts,
         );
-        my %check_opts = $self->{active_input} && $self->{active_input} eq 'checkbox'
-            ? (-attrs => ATTR_REVERSE)
-            : ();
         $self->{checkbox_input}->render(
             $self->renderer,
             $self->pos + $self->geo->points->{C},
-            %check_opts,
         );
-        my %select_opts = $self->{active_input} && $self->{active_input} eq 'select'
-            ? (-attrs => ATTR_REVERSE)
-            : ();
         $self->{select_input}->render(
             $self->renderer,
             $self->pos + $self->geo->points->{SV},
-            %select_opts,
         );
         my $time = $self->{time} // POSIX::strftime("%H:%M:%S", localtime);
         $self->renderer->render_text($self->pos + $self->geo->points->{T}, $time,
@@ -391,23 +398,17 @@ my $dt = Time::HiRes::time();
 my $resized = 0;
 local $SIG{WINCH} = sub { $resized = 1; };
 
-my $mapper = MaterialMapper::from_callback(sub ($mapper) {
-    return { -bg => 0xcccccc } 
-        if $mapper eq 'STEEL';
+my $mapper = MaterialMapper::from_callback(sub ($material) {
+    state %map = (
+        MENU_BG => { -bg => 0xaa00aa, -attrs => ATTR_BOLD },
+        QUESTION_BG => { -bg => 0x000000 },
+        SHADOW_BG => { -bg => 0x303030 },
+        INPUT_FOCUS => {  -attrs => ATTR_BOLD | ATTR_REVERSE },
+        INPUT_BLUR => { -attrs => 0 },
+        DEFAULT => { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 },
+    );
 
-    return { -bg => 0xaa00aa, -attrs => ATTR_BOLD }
-        if $mapper eq 'MENU_BG';
-
-    return { -bg => 0x000000 }
-        if $mapper eq 'QUESTION_BG';
-
-    return { -bg => 0x303030 }
-        if $mapper eq 'SHADOW_BG';
-
-    return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 }
-        if $mapper eq 'DEFAULT';
-
-    return { -fg => 0xaaaaaa, -bg => 0x0a0a0a, -attrs => 0 };
+    $map{$material} // $map{DEFAULT};
 });
 
 # my $renderer = Renderers::Naive::new($terminal_space, $mapper, ' ');
