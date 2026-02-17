@@ -7,9 +7,10 @@ use POSIX qw(ICANON ECHO VMIN VTIME TCSANOW);
 
 use lib ".";
 use Event;
+use UTF8Buffer;
 use Utils qw(getters);
 
-getters qw(select termios orig fd);
+getters qw(select termios orig fd utf8buf);
 
 sub new() {
     confess "STDIN is not a TTY" unless -t STDIN;
@@ -32,6 +33,7 @@ sub new() {
         termios => $termios,
         orig    => $orig,
         fd      => $fd,
+        utf8buf => UTF8Buffer::new(),
     }, __PACKAGE__;
 
     $self->enable_raw_mode;
@@ -57,9 +59,11 @@ sub poll($self, $timeout) {
     return @events
         unless $self->select->can_read($timeout);
 
-    while (sysread(\*STDIN, my $ch, 1)) {
-        push @events, Event::key_press($ch);
+    my @chars;
+    while (sysread(\*STDIN, my $chunk, 1024)) {
+        push @chars, $self->{utf8buf}->push_bytes($chunk);
     }
+    push @events, map { Event::key_press($_) } @chars;
 
     return @events;
 }
