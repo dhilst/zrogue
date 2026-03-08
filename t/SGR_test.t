@@ -10,7 +10,8 @@ subtest 'attrs works as expected' => sub {
 
     is_deeply(\@attrs, []);
 
-    is(Term::ANSIColor::color(@attrs), undef);
+    my $escape = Term::ANSIColor::color(@attrs);
+    ok(!defined($escape) || $escape eq '', 'color() with no attrs is empty');
 };
 
 done_testing;

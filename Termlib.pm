@@ -41,6 +41,8 @@ sub clear($self) {
 sub write($self, $value, $col, $row, @ignored) {
     return if $ENV{SUPPRESS_TERMLIB};
     local $| = 1;
+    $col = int($col);
+    $row = int($row);
     # print $self->term->Tputs("sc", 1);
     print $self->term->Tgoto("cm", $col, $row);
     print $value;
@@ -59,6 +61,8 @@ sub write_batch($self, $values_ref) {
 sub write_color($self, $value, $col, $row, $fg = -1, $bg = -1, $attrs = -1) {
     return if $ENV{SUPPRESS_TERMLIB};
     local $| = 1;
+    $col = int($col);
+    $row = int($row);
     my @sgr_attrs;
     push @sgr_attrs, SGR::attrs($attrs) if $attrs ne -1;
     push @sgr_attrs, SGR::fg($fg) if $fg ne -1;

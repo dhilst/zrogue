@@ -4,7 +4,6 @@ use utf8;
 package Matrix3::Vec {
     use Carp;
 
-    use integer;
     use overload
         '""' => \&to_str,
         'eq' => \&eq,

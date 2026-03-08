@@ -3,13 +3,22 @@ package Renderers::Naive {
     use FindBin qw($Bin);
     use Carp;
     use lib "$Bin";
-    use integer;
 
     use Matrix3;
     use Termlib;
     use Utils qw(getters);
 
     getters qw(terminal_space term blank mapper);
+
+    sub _quantize_xy($pos_vec) {
+        my ($col, $row) = $pos_vec->@*;
+        return (int($col), int($row));
+    }
+
+    sub _write_quantized($self, $text, $pos_vec) {
+        my ($col, $row) = _quantize_xy($pos_vec);
+        $self->term->write($text, $col, $row);
+    }
     
     sub new($terminal_space, $mapper, $blank = '.') {
         bless {
@@ -44,7 +53,7 @@ package Renderers::Naive {
         my $coord_mapper = $self->terminal_space * Matrix3::translate($at_vec->@*);
         for my $po ($geo->@*) {
             my ($pos_vec, $value) = $po->@*;
-            $self->term->write_vec($value, $pos_vec * $coord_mapper);
+            $self->_write_quantized($value, $pos_vec * $coord_mapper);
         }
     }
 
@@ -52,7 +61,7 @@ package Renderers::Naive {
         my $coord_mapper = $self->terminal_space * Matrix3::translate($at_vec->@*);
         for my $po ($geo->@*) {
             my ($pos_vec, $value) = $po->@*;
-            $self->term->write_vec($char x length($value), $pos_vec * $coord_mapper);
+            $self->_write_quantized($char x length($value), $pos_vec * $coord_mapper);
         }
     }
 
@@ -156,17 +165,17 @@ package Renderers::Naive {
             my $T = Matrix3::translate(- length($text) / 2, 0);
             my $p = $at_vec->copy;
             $p *= $T *= $self->terminal_space;
-            $self->term->write_vec($text, $p);
+            $self->_write_quantized($text, $p);
             return;
         } elsif ($opts{-justify} eq 'right') {
             my $T = Matrix3::translate(- length($text), 0);
             my $p = $at_vec->copy;
             $p *= $T *= $self->terminal_space;
-            $self->term->write_vec($text, $p);
+            $self->_write_quantized($text, $p);
             return;
         }
 
-        $self->term->write_vec($text, $at_vec * $self->terminal_space);
+        $self->_write_quantized($text, $at_vec * $self->terminal_space);
     }
 
     sub render_fmt($self, $at_vec, $fmt, @args) {
@@ -198,6 +207,11 @@ package Renderers::DoubleBuffering {
         term
         mapper
     );
+
+    sub _quantize_xy($pos_vec) {
+        my ($col, $row) = $pos_vec->@*;
+        return (int($col), int($row));
+    }
 
     sub new($terminal_space, $H, $W, $mapper, $blank = '.') {
         my $packstr = "l4";
@@ -283,6 +297,7 @@ package Renderers::DoubleBuffering {
         } elsif ($opts{-justify} eq 'center') {
             $pos *= Matrix3::translate(-length($text)/2, 0);
         }
+        my ($col, $row) = _quantize_xy($pos);
 
         my @unpacked;
         for my $codepo (split //u, $text) {
@@ -290,7 +305,7 @@ package Renderers::DoubleBuffering {
         }
 
         # say "Prerendering <$text>";
-        $self->bbuf->update_multi($pos->@*, @unpacked);
+        $self->bbuf->update_multi($col, $row, @unpacked);
     }
 
     sub render_style($self, $pos_vec, $length, %opts) {

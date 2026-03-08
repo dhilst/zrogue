@@ -2,6 +2,7 @@ package Input;
 use v5.36;
 
 use Carp;
+use Errno qw(EAGAIN EWOULDBLOCK EINTR);
 use IO::Select;
 use POSIX qw(ICANON ECHO VMIN VTIME TCSANOW);
 
@@ -10,7 +11,7 @@ use Event;
 use UTF8Buffer;
 use Utils qw(getters);
 
-getters qw(select termios orig fd utf8buf);
+getters qw(select termios orig fd utf8buf queue);
 
 sub new() {
     confess "STDIN is not a TTY" unless -t STDIN;
@@ -33,6 +34,7 @@ sub new() {
         termios => $termios,
         orig    => $orig,
         fd      => $fd,
+        queue   => [],
         utf8buf => UTF8Buffer::new(),
     }, __PACKAGE__;
 
@@ -53,19 +55,45 @@ sub enable_raw_mode($self) {
     $t->setattr($self->{fd}, TCSANOW);
 }
 
-sub poll($self, $timeout) {
+sub _read_events($self) {
     my @events;
-
-    return @events
-        unless $self->select->can_read($timeout);
-
     my @chars;
-    while (sysread(\*STDIN, my $chunk, 1024)) {
+
+    while (1) {
+        my $n = sysread(\*STDIN, my $chunk, 1024);
+        if (!defined $n) {
+            last if $!{EAGAIN} || $!{EWOULDBLOCK} || $!{EINTR};
+            last;
+        }
+        last if $n == 0;
         push @chars, $self->{utf8buf}->push_bytes($chunk);
     }
     push @events, map { Event::key_press($_) } @chars;
-
     return @events;
+}
+
+sub pump($self, $timeout = 0) {
+    return 0 unless $self->select->can_read($timeout);
+    my @events = $self->_read_events();
+    push $self->{queue}->@*, @events;
+    return scalar @events;
+}
+
+sub pump_ready($self) {
+    my @events = $self->_read_events();
+    push $self->{queue}->@*, @events;
+    return scalar @events;
+}
+
+sub drain($self) {
+    my @events = $self->{queue}->@*;
+    $self->{queue} = [];
+    return @events;
+}
+
+sub poll($self, $timeout) {
+    $self->pump($timeout);
+    return $self->drain();
 }
 
 sub restore_mode($self) {
