@@ -165,6 +165,7 @@ sub OnUpdate :prototype(&) {
 package TML::Runtime::App {
     use v5.36;
     use Carp;
+    use Scalar::Util qw(refaddr);
 
     sub _new($class, $opts) {
         my $state = $opts->{state} // {};
@@ -210,6 +211,12 @@ package TML::Runtime::App {
             on_key => [],
             on_update => [],
             quit => 0,
+            skip_render_once => 0,
+            layout_cache => {},
+            frame_layout_cache => {},
+            layout_tree_sig => undef,
+            layout_size_sig => undef,
+            layout_dynamic_nodes => {},
         }, $class;
     }
 
@@ -217,8 +224,128 @@ package TML::Runtime::App {
     sub border_mapper($self) { $self->{border_mapper} }
     sub state($self) { $self->{state} }
 
+    sub _cache_node_id($self, $node) {
+        return 0 unless defined($node) && ref($node);
+        return refaddr($node) // 0;
+    }
+
+    sub _cache_key($self, $node, $parent_w, $parent_h, @extra) {
+        my @parts = (
+            $self->_cache_node_id($node),
+            (defined $parent_w ? $parent_w : 'u'),
+            (defined $parent_h ? $parent_h : 'u'),
+            map { defined $_ ? $_ : 'u' } @extra,
+        );
+        return join "\x1f", @parts;
+    }
+
+    sub _cache_fetch($self, $bucket, $node, $parent_w, $parent_h, @extra) {
+        my $key = $self->_cache_key($node, $parent_w, $parent_h, @extra);
+        my $frame_bucket = ($self->{frame_layout_cache}{$bucket} //= {});
+        if (exists $frame_bucket->{$key}) {
+            return $frame_bucket->{$key};
+        }
+
+        my $node_id = $self->_cache_node_id($node);
+        my $is_dynamic = $self->{layout_dynamic_nodes}{$node_id} // 1;
+        return undef if $is_dynamic;
+
+        my $persistent_bucket = ($self->{layout_cache}{$bucket} //= {});
+        return undef unless exists $persistent_bucket->{$key};
+
+        my $cached = $persistent_bucket->{$key};
+        $frame_bucket->{$key} = $cached;
+        return $cached;
+    }
+
+    sub _cache_store($self, $bucket, $node, $parent_w, $parent_h, $value, @extra) {
+        my $key = $self->_cache_key($node, $parent_w, $parent_h, @extra);
+        my $frame_bucket = ($self->{frame_layout_cache}{$bucket} //= {});
+        $frame_bucket->{$key} = $value;
+
+        my $node_id = $self->_cache_node_id($node);
+        my $is_dynamic = $self->{layout_dynamic_nodes}{$node_id} // 1;
+        if (!$is_dynamic) {
+            my $persistent_bucket = ($self->{layout_cache}{$bucket} //= {});
+            $persistent_bucket->{$key} = $value;
+        }
+
+        return $value;
+    }
+
+    sub _tree_signature_walk($self, $node, $parts, $dynamic_nodes) {
+        my $node_id = $self->_cache_node_id($node);
+        my $props = $node->{props} // {};
+        my $children = $node->{children} // [];
+        my @keys = sort keys $props->%*;
+
+        push @$parts, 'N', ($node->{type} // ''), $node_id, scalar(@keys), scalar($children->@*);
+
+        my $dynamic = 0;
+        for my $key (@keys) {
+            my $value = $props->{$key};
+            if (!defined $value) {
+                push @$parts, 'P', $key, 'U';
+                next;
+            }
+            if (!ref($value)) {
+                my $text = "$value";
+                push @$parts, 'P', $key, 'S' . length($text) . ':' . $text;
+                next;
+            }
+
+            my $type = ref($value);
+            my $addr = refaddr($value) // 0;
+            push @$parts, 'P', $key, "R:$type:$addr";
+            $dynamic = 1 if $type eq 'CODE';
+        }
+
+        for my $child (@$children) {
+            $dynamic ||= $self->_tree_signature_walk($child, $parts, $dynamic_nodes);
+        }
+
+        $dynamic_nodes->{$node_id} = $dynamic ? 1 : 0;
+        return $dynamic;
+    }
+
+    sub _refresh_layout_caches($self, $avail_w = undef, $avail_h = undef) {
+        my $clear_persistent = 0;
+
+        my $size_sig = join "\x1f",
+            (defined $avail_w ? $avail_w : 'u'),
+            (defined $avail_h ? $avail_h : 'u');
+        if (!defined($self->{layout_size_sig}) || $self->{layout_size_sig} ne $size_sig) {
+            $self->{layout_size_sig} = $size_sig;
+            $clear_persistent = 1;
+        }
+
+        my @parts;
+        my %dynamic_nodes;
+        if (defined $self->{root}) {
+            $self->_tree_signature_walk($self->{root}, \@parts, \%dynamic_nodes);
+        }
+        my $tree_sig = join "\x1f", @parts;
+        if (!defined($self->{layout_tree_sig}) || $self->{layout_tree_sig} ne $tree_sig) {
+            $self->{layout_tree_sig} = $tree_sig;
+            $clear_persistent = 1;
+        }
+
+        if ($clear_persistent) {
+            $self->{layout_cache} = {};
+        }
+
+        $self->{layout_dynamic_nodes} = \%dynamic_nodes;
+        $self->{frame_layout_cache} = {};
+        return;
+    }
+
     sub quit($self) {
         $self->{quit} = 1;
+        return;
+    }
+
+    sub skip_render($self) {
+        $self->{skip_render_once} = 1;
         return;
     }
 
@@ -248,7 +375,12 @@ package TML::Runtime::App {
         return $outer - $inner;
     }
 
-    sub _children_extent($self, $renderer, $children) {
+    sub _children_extent($self, $renderer, $node, $children, $parent_w = undef, $parent_h = undef) {
+        my $cached = $self->_cache_fetch(
+            'children_extent', $node, $parent_w, $parent_h
+        );
+        return $cached->@* if defined $cached;
+
         my $max_col = 0;
         my $max_row = 0;
 
@@ -256,7 +388,7 @@ package TML::Runtime::App {
             my $props = $child->{props};
             my $cx = TML::_resolve_int($self, $renderer, $child, $props->{x}, 0);
             my $cy = TML::_resolve_int($self, $renderer, $child, $props->{y}, 0);
-            my ($cw, $ch) = $self->_node_dimensions($renderer, $child);
+            my ($cw, $ch) = $self->_node_dimensions($renderer, $child, $parent_w, $parent_h);
 
             my $col_end = $cx + $cw;
             my $row_end = (-$cy) + $ch;
@@ -264,16 +396,57 @@ package TML::Runtime::App {
             $max_row = $row_end if $row_end > $max_row;
         }
 
-        return ($max_col, $max_row);
+        my $result = [$max_col, $max_row];
+        $self->_cache_store('children_extent', $node, $parent_w, $parent_h, $result);
+        return $result->@*;
     }
 
-    sub _container_layout($self, $renderer, $node, $type) {
+    sub _resolve_length($self, $renderer, $node, $value, $parent_len, $label, $default = undef) {
+        my $resolved = defined($value)
+            ? TML::_resolve($self, $renderer, $node, $value)
+            : $default;
+        return undef unless defined $resolved;
+
+        if (!ref($resolved) && $resolved =~ /^\s*([+-]?\d+(?:\.\d+)?)%\s*$/) {
+            confess "$label percentage requires parent size"
+                unless defined $parent_len;
+            my $pct = 0 + $1;
+            my $len = int($parent_len * $pct / 100);
+            $len = 0 if $len < 0;
+            return $len;
+        }
+
+        if (!ref($resolved) && $resolved =~ /^\s*[+-]?\d+(?:\.\d+)?\s*$/) {
+            return int($resolved);
+        }
+
+        confess "$label must be numeric or percentage string";
+    }
+
+    sub _container_layout($self, $renderer, $node, $type, $parent_w = undef, $parent_h = undef) {
+        my $cached = $self->_cache_fetch(
+            'container_layout', $node, $parent_w, $parent_h, $type
+        );
+        return $cached->@* if defined $cached;
+
         my $props = $node->{props};
         my $gap = TML::_resolve_int($self, $renderer, $node, $props->{gap}, 0);
         $gap = 0 if $gap < 0;
 
+        my $box_w = exists $props->{width}
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width')
+            : undef;
+        my $box_h = exists $props->{height}
+            ? $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height')
+            : undef;
+
+        my $child_parent_w = defined($box_w) ? $box_w : $parent_w;
+        my $child_parent_h = defined($box_h) ? $box_h : $parent_h;
+
         my @children = $node->{children}->@*;
-        my @child_dims = map { [ $self->_node_dimensions($renderer, $_) ] } @children;
+        my @child_dims = map {
+            [ $self->_node_dimensions($renderer, $_, $child_parent_w, $child_parent_h) ]
+        } @children;
 
         my ($natural_w, $natural_h) = (0, 0);
         if ($type eq 'VBox') {
@@ -290,12 +463,8 @@ package TML::Runtime::App {
             $natural_w += $gap * (@child_dims - 1) if @child_dims > 1;
         }
 
-        my $box_w = exists $props->{width}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{width}, $natural_w)
-            : $natural_w;
-        my $box_h = exists $props->{height}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{height}, $natural_h)
-            : $natural_h;
+        $box_w = $natural_w unless defined $box_w;
+        $box_h = $natural_h unless defined $box_h;
         $box_w = 0 if $box_w < 0;
         $box_h = 0 if $box_h < 0;
 
@@ -343,19 +512,42 @@ package TML::Runtime::App {
             }
         }
 
-        return (\@placements, $box_w, $box_h);
+        my $result = [\@placements, $box_w, $box_h];
+        $self->_cache_store(
+            'container_layout', $node, $parent_w, $parent_h, $result, $type
+        );
+        return $result->@*;
     }
 
-    sub _bbox_layout($self, $renderer, $node) {
-        my $props = $node->{props};
-        my ($content_w, $content_h) = $self->_children_extent($renderer, $node->{children});
+    sub _bbox_layout($self, $renderer, $node, $parent_w = undef, $parent_h = undef) {
+        my $cached = $self->_cache_fetch(
+            'bbox_layout', $node, $parent_w, $parent_h
+        );
+        return $cached->@* if defined $cached;
 
+        my $props = $node->{props};
         my $box_w = exists $props->{width}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{width}, $content_w + 2)
-            : ($content_w + 2);
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width')
+            : undef;
         my $box_h = exists $props->{height}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{height}, $content_h + 2)
-            : ($content_h + 2);
+            ? $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height')
+            : undef;
+
+        my $inner_hint_w = defined($box_w) ? ($box_w - 2) : (defined($parent_w) ? ($parent_w - 2) : undef);
+        my $inner_hint_h = defined($box_h) ? ($box_h - 2) : (defined($parent_h) ? ($parent_h - 2) : undef);
+        $inner_hint_w = 0 if defined($inner_hint_w) && $inner_hint_w < 0;
+        $inner_hint_h = 0 if defined($inner_hint_h) && $inner_hint_h < 0;
+
+        my ($content_w, $content_h) = $self->_children_extent(
+            $renderer,
+            $node,
+            $node->{children},
+            $inner_hint_w,
+            $inner_hint_h,
+        );
+
+        $box_w = $content_w + 2 unless defined $box_w;
+        $box_h = $content_h + 2 unless defined $box_h;
 
         $box_w = 2 if $box_w < 2;
         $box_h = 2 if $box_h < 2;
@@ -376,53 +568,80 @@ package TML::Runtime::App {
             $inner_h, $content_h, 'vertical', $v_align, 'start'
         );
 
-        return ($box_w, $box_h, $content_x, $content_y);
+        my $result = [$box_w, $box_h, $content_x, $content_y];
+        $self->_cache_store('bbox_layout', $node, $parent_w, $parent_h, $result);
+        return $result->@*;
     }
 
-    sub _node_dimensions($self, $renderer, $node) {
+    sub _node_dimensions($self, $renderer, $node, $parent_w = undef, $parent_h = undef) {
+        my $cached = $self->_cache_fetch(
+            'node_dimensions', $node, $parent_w, $parent_h
+        );
+        return $cached->@* if defined $cached;
+
         my $props = $node->{props};
         my $type = $node->{type};
 
         if ($type eq 'Rect') {
-            my $w = TML::_resolve_int($self, $renderer, $node, $props->{width}, 0);
-            my $h = TML::_resolve_int($self, $renderer, $node, $props->{height}, 0);
+            my $w = $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width', 0);
+            my $h = $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height', 0);
             $w = 0 if $w < 0;
             $h = 0 if $h < 0;
-            return ($w, $h);
+            my $result = [$w, $h];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
         }
 
         if ($type eq 'Text') {
             my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
             my $w = length("$text");
-            return ($w, 1);
+            my $result = [$w, 1];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
         }
 
         if ($type eq 'VBox' || $type eq 'HBox') {
-            my ($placements, $w, $h) = $self->_container_layout($renderer, $node, $type);
-            return ($w, $h);
+            my ($placements, $w, $h) = $self->_container_layout(
+                $renderer, $node, $type, $parent_w, $parent_h
+            );
+            my $result = [$w, $h];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
         }
 
         if ($type eq 'BBox') {
-            my ($w, $h, $content_x, $content_y) = $self->_bbox_layout($renderer, $node);
-            return ($w, $h);
+            my ($w, $h, $content_x, $content_y) = $self->_bbox_layout(
+                $renderer, $node, $parent_w, $parent_h
+            );
+            my $result = [$w, $h];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
         }
 
-        my ($natural_w, $natural_h) = $self->_children_extent($renderer, $node->{children});
+        my ($natural_w, $natural_h) = $self->_children_extent(
+            $renderer,
+            $node,
+            $node->{children},
+            $parent_w,
+            $parent_h,
+        );
         my $w = exists $props->{width}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{width}, $natural_w)
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width', $natural_w)
             : $natural_w;
         my $h = exists $props->{height}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{height}, $natural_h)
+            ? $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height', $natural_h)
             : $natural_h;
         $w = 0 if $w < 0;
         $h = 0 if $h < 0;
-        return ($w, $h);
+        my $result = [$w, $h];
+        $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+        return $result->@*;
     }
 
-    sub _render_rect($self, $renderer, $node, $local) {
+    sub _render_rect($self, $renderer, $node, $local, $parent_w = undef, $parent_h = undef) {
         my $props = $node->{props};
-        my $w = TML::_resolve_int($self, $renderer, $node, $props->{width}, 0);
-        my $h = TML::_resolve_int($self, $renderer, $node, $props->{height}, 0);
+        my $w = $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width', 0);
+        my $h = $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height', 0);
         return if $w <= 0 || $h <= 0;
 
         my %style_props = (
@@ -469,9 +688,11 @@ package TML::Runtime::App {
         }
     }
 
-    sub _render_bbox($self, $renderer, $node, $local) {
+    sub _render_bbox($self, $renderer, $node, $local, $parent_w = undef, $parent_h = undef) {
         my $props = $node->{props};
-        my ($w, $h, $content_x, $content_y) = $self->_bbox_layout($renderer, $node);
+        my ($w, $h, $content_x, $content_y) = $self->_bbox_layout(
+            $renderer, $node, $parent_w, $parent_h
+        );
         return if $w <= 0 || $h <= 0;
 
         my $border_name = TML::_resolve($self, $renderer, $node, $props->{border} // 'SINGLE');
@@ -502,37 +723,54 @@ package TML::Runtime::App {
         }
 
         my $content_base = $local + Matrix3::Vec::from_xy($content_x, -$content_y);
+        my $inner_w = $w - 2;
+        my $inner_h = $h - 2;
         for my $child ($node->{children}->@*) {
-            $self->_render_node($renderer, $child, $content_base);
+            $self->_render_node($renderer, $child, $content_base, $inner_w, $inner_h);
         }
     }
 
-    sub _render_node($self, $renderer, $node, $base) {
+    sub _render_node($self, $renderer, $node, $base, $parent_w = undef, $parent_h = undef) {
         my $props = $node->{props};
         my $x = TML::_resolve_int($self, $renderer, $node, $props->{x}, 0);
         my $y = TML::_resolve_int($self, $renderer, $node, $props->{y}, 0);
         my $local = $base + Matrix3::Vec::from_xy($x, $y);
 
         if ($node->{type} eq 'Rect') {
-            $self->_render_rect($renderer, $node, $local);
+            $self->_render_rect($renderer, $node, $local, $parent_w, $parent_h);
         } elsif ($node->{type} eq 'Text') {
             my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
             my %style = TML::_style_opts($self, $renderer, $node, $props);
             $renderer->render_text($local, "$text", %style);
         } elsif ($node->{type} eq 'VBox' || $node->{type} eq 'HBox') {
-            my ($placements, $w, $h) = $self->_container_layout($renderer, $node, $node->{type});
+            my ($placements, $w, $h) = $self->_container_layout(
+                $renderer, $node, $node->{type}, $parent_w, $parent_h
+            );
             for my $placement (@$placements) {
                 my $child_pos = $local + Matrix3::Vec::from_xy($placement->{x}, -$placement->{y});
-                $self->_render_node($renderer, $placement->{child}, $child_pos);
+                $self->_render_node($renderer, $placement->{child}, $child_pos, $w, $h);
             }
             return;
         } elsif ($node->{type} eq 'BBox') {
-            $self->_render_bbox($renderer, $node, $local);
+            $self->_render_bbox($renderer, $node, $local, $parent_w, $parent_h);
             return;
         }
 
+        my $child_parent_w = $parent_w;
+        my $child_parent_h = $parent_h;
+        if (exists $props->{width}) {
+            $child_parent_w = $self->_resolve_length(
+                $renderer, $node, $props->{width}, $parent_w, 'width', $child_parent_w
+            );
+        }
+        if (exists $props->{height}) {
+            $child_parent_h = $self->_resolve_length(
+                $renderer, $node, $props->{height}, $parent_h, 'height', $child_parent_h
+            );
+        }
+
         for my $child ($node->{children}->@*) {
-            $self->_render_node($renderer, $child, $local);
+            $self->_render_node($renderer, $child, $local, $child_parent_w, $child_parent_h);
         }
     }
 
@@ -551,15 +789,304 @@ package TML::Runtime::App {
             }
         }
 
-        return $self->{quit} ? 0 : 1;
+        return 0 if $self->{quit};
+        if ($self->{skip_render_once}) {
+            $self->{skip_render_once} = 0;
+            return -1;
+        }
+        return 1;
     }
 
     sub render($self, $renderer) {
         my $origin = Matrix3::Vec::from_xy(0, 0);
+        my $avail_w = $renderer->can('width') ? $renderer->width : undef;
+        my $avail_h = $renderer->can('height') ? $renderer->height : undef;
+        $self->_refresh_layout_caches($avail_w, $avail_h);
         for my $child ($self->{root}->{children}->@*) {
-            $self->_render_node($renderer, $child, $origin);
+            $self->_render_node($renderer, $child, $origin, $avail_w, $avail_h);
         }
     }
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+TML - Block-based Perl EDSL for terminal widget trees
+
+=head1 SYNOPSIS
+
+    use TML qw(App Layer VBox HBox BBox Rect Text OnKey OnUpdate);
+    use MaterialMapper;
+    use BorderMapper;
+
+    my $material = MaterialMapper::from_callback(sub ($name) {
+        return { -fg => 0xffffff, -bg => 0x202020 } if $name eq 'DEFAULT';
+        return { -fg => 0x8cf29a } if $name eq 'ACCENT';
+    });
+
+    my $borders = BorderMapper::from_callback(sub ($name) {
+        return "+-+\n| |\n+-+" if $name eq 'ASCII';
+        return "┌─┐\n│ │\n└─┘";
+    });
+
+    my $ui = App {
+        OnKey 'q' => sub ($app, $event) { $app->quit; };
+
+        BBox {
+            HBox {
+                Text {} -text => 'Left';
+                Text {} -text => 'Center';
+                Text {} -text => 'Right';
+            } -gap => 2, -align => 'center';
+        } -x => -10, -y => 4,
+          -border => 'ASCII',
+          -material => 'ACCENT';
+    } -state => {},
+      -material_mapper => $material,
+      -border_mapper => $borders;
+
+=head1 DESCRIPTION
+
+TML builds a widget tree directly from Perl blocks and returns a runtime app
+object compatible with C<GameLoop> (C<update($dt,@events)> and
+C<render($renderer)>).
+
+There is no string parsing or compile step. Widgets are declared using Perl
+function calls (C<App>, C<VBox>, C<Text>, etc.) and options passed as key/value
+pairs.
+
+=head1 EXPORTS
+
+All functions are exported on demand via C<@EXPORT_OK>:
+
+    App Layer VBox HBox BBox Rect Text OnKey OnUpdate
+
+=head1 APP
+
+=head2 App BLOCK, %opts
+
+Root builder. Returns a C<TML::Runtime::App> object.
+
+Supported app options:
+
+=over 4
+
+=item * C<-state> (hashref, default C<{}>)
+
+Mutable state bag exposed as C<$app->state>.
+
+=item * C<-material_mapper> / C<-mapper>
+
+Object that implements C<style($name)> and returns a style hashref compatible
+with C<MaterialMapper>.
+
+=item * C<-border_mapper>
+
+Object that implements C<style($name)> and returns a normalized 3x3 border
+matrix compatible with C<BorderMapper>.
+
+=item * C<-default_fg>, C<-default_bg>, C<-default_attrs>
+
+Used only when no explicit material mapper is supplied.
+
+=back
+
+=head1 EVENTS
+
+=head2 OnKey CHAR, CODEREF
+
+Registers a key handler:
+
+    OnKey 'q' => sub ($app, $event) { ... };
+
+Called for C<Event::Type::KEY_PRESS> events whose character matches C<CHAR>.
+
+=head2 OnUpdate BLOCK
+
+Registers a per-frame update callback:
+
+    OnUpdate { my ($app, $dt, @events) = @_; ... };
+
+=head1 NODES
+
+Each node accepts an optional child block and option pairs.
+Common positional options:
+
+=over 4
+
+=item * C<-x> (default 0)
+
+=item * C<-y> (default 0)
+
+=back
+
+Values may be plain scalars or coderefs. For most properties, coderef signature
+is:
+
+    sub ($app, $renderer, $node) { ... }
+
+Length properties such as C<-width> and C<-height> accept:
+
+=over 4
+
+=item * Numeric values (cell units), e.g. C<24>
+
+=item * Percentage strings, e.g. C<'60%'> (relative to parent available size)
+
+=back
+
+=head2 Layer
+
+Container/group node. Does not draw anything, only offsets children by C<-x/-y>.
+
+=head2 Text
+
+Renders one text run.
+
+Options:
+
+=over 4
+
+=item * C<-text> (string or coderef)
+
+=item * C<-fg>, C<-bg>, C<-attrs>
+
+=item * C<-justify> (passed to renderer; e.g. C<left>, C<center>, C<right>)
+
+=back
+
+=head2 Rect
+
+Renders a filled rectangle using space glyphs with style.
+
+Options:
+
+=over 4
+
+=item * C<-width>, C<-height>
+
+=item * C<-fg>, C<-bg>, C<-attrs>
+
+=back
+
+If any style option is a coderef, it is evaluated per cell with signature:
+
+    sub ($app, $renderer, $node, $col, $row, $w, $h) { ... }
+
+This enables gradients and per-cell effects.
+
+=head2 VBox and HBox
+
+Auto-layout containers.
+
+Options:
+
+=over 4
+
+=item * C<-gap> (default 0)
+
+Spacing between adjacent child nodes.
+
+=item * C<-width>, C<-height> (optional)
+
+Container box size. If omitted, natural content size is used.
+
+=item * C<-align>
+
+Convenience alignment applied to main and cross axes.
+
+=item * C<-main_align>, C<-cross_align>
+
+Axis-specific alignment override.
+
+=back
+
+Accepted alignment keywords:
+
+    left up right down center
+
+Keyword mapping is axis-aware:
+
+=over 4
+
+=item * Horizontal axis: C<left/up> => start, C<right/down> => end
+
+=item * Vertical axis: C<up/left> => start, C<down/right> => end
+
+=item * C<center> => centered
+
+=back
+
+=head2 BBox
+
+Bordered container. Draws a border and renders children inside a one-cell inset.
+
+Options:
+
+=over 4
+
+=item * C<-border> (border style key, default C<SINGLE>)
+
+Resolved through C<border_mapper->style($name)> returning a 3x3 char matrix:
+
+    [ [tl, t, tr],
+      [l,  c, r ],
+      [bl, b, br] ]
+
+=item * C<-material> (material key, default C<DEFAULT>)
+
+Resolved through C<material_mapper->style($name)> for border styling.
+
+=item * C<-fg>, C<-bg>, C<-attrs>
+
+Optional direct style overrides for border cells.
+
+=item * C<-width>, C<-height>
+
+Optional outer size, minimum 2x2.
+
+=item * C<-align>, C<-h_align>, C<-v_align>
+
+Content alignment inside the inner area (after subtracting border thickness).
+
+=back
+
+=head1 RUNTIME OBJECT
+
+C<App { ... }> returns C<TML::Runtime::App> with:
+
+=over 4
+
+=item * C<mapper>
+
+Material mapper used by C<GameLoop> renderer setup.
+
+=item * C<border_mapper>
+
+Border mapper used by C<BBox>.
+
+=item * C<state>
+
+Returns mutable state hashref.
+
+=item * C<quit>
+
+Marks app for exit; C<update> returns false on following tick.
+
+=item * C<skip_render>
+
+Marks the next C<update> result as C<-1>, meaning this widget should skip
+rendering for one frame.
+
+=item * C<update($dt, @events)> and C<render($renderer)>
+
+The widget lifecycle expected by C<GameLoop>. Return semantics for
+C<update>: C<0> stop loop, C<-1> skip render for this widget this frame,
+truthy values render normally.
+
+=back
+
+=cut

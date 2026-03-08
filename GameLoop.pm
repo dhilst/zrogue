@@ -77,17 +77,27 @@ package GameLoop {
 
         my @events = $self->{input}->drain();
         my $keep_running = 1;
-        for my $widget ($self->{widgets}->@*) {
+        my @skip_render;
+        for my $idx (0 .. $#{$self->{widgets}}) {
+            my $widget = $self->{widgets}->[$idx];
             my $keep = $widget->update($delta_time, @events);
+
+            # -1 means "do not render this widget for this frame".
+            $skip_render[$idx] = (defined($keep) && !ref($keep) && $keep == -1) ? 1 : 0;
+
             if (defined($keep) && !$keep) {
                 $keep_running = 0;
             }
         }
 
-        for my $widget ($self->{widgets}->@*) {
+        my $rendered = 0;
+        for my $idx (0 .. $#{$self->{widgets}}) {
+            next if $skip_render[$idx];
+            my $widget = $self->{widgets}->[$idx];
             $widget->render($self->{renderer});
+            $rendered = 1;
         }
-        $self->{renderer}->flush();
+        $self->{renderer}->flush() if $rendered;
 
         $stop_cb->() unless $keep_running;
     }
