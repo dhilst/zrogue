@@ -5,6 +5,7 @@ use lib ".";
 use Geometry3;
 use MaterialMapper;
 use Skin;
+use TerminalStyle;
 
 sub cell_at($surface, $x, $y) {
     my $row = -$y;
@@ -13,10 +14,10 @@ sub cell_at($surface, $x, $y) {
 
 subtest 'skin with shadow' => sub {
     my $mat = MaterialMapper::from_callback(sub ($m) {
-        return { -bg => 0 } if $m eq 'DEFAULT';
-        return { -bg => 1 } if $m eq 'BG';
-        return { -bg => 2 } if $m eq 'SHADOW';
-        return {};
+        return TerminalStyle::new(-bg => 0) if $m eq 'DEFAULT';
+        return TerminalStyle::new(-bg => 1) if $m eq 'BG';
+        return TerminalStyle::new(-bg => 2) if $m eq 'SHADOW';
+        return TerminalStyle::new();
     });
     my $geo = Geometry3::from_str("AB\nCD");
 
@@ -47,9 +48,9 @@ subtest 'skin with shadow' => sub {
 
 subtest 'skin without shadow' => sub {
     my $mat = MaterialMapper::from_callback(sub ($m) {
-        return { -bg => 0 } if $m eq 'DEFAULT';
-        return { -bg => 3 } if $m eq 'BG';
-        return {};
+        return TerminalStyle::new(-bg => 0) if $m eq 'DEFAULT';
+        return TerminalStyle::new(-bg => 3) if $m eq 'BG';
+        return TerminalStyle::new();
     });
     my $geo = Geometry3::from_str("X");
     my ($surface, $clear_surface) = Skin::from_geometry($geo,

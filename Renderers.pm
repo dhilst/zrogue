@@ -19,6 +19,25 @@ package Renderers::Naive {
         my ($col, $row) = _quantize_xy($pos_vec);
         $self->term->write($text, $col, $row);
     }
+
+    sub _style_fields($style) {
+        confess "missing style" unless defined $style;
+        if (ref($style) eq 'TerminalStyle') {
+            return (
+                defined($style->fg) ? $style->fg : -1,
+                defined($style->bg) ? $style->bg : -1,
+                defined($style->attrs) ? $style->attrs : -1,
+            );
+        }
+
+        confess "style must support fg/bg/attrs or be a hashref"
+            unless ref($style) eq 'HASH';
+        return (
+            exists $style->{-fg} ? ($style->{-fg} // -1) : -1,
+            exists $style->{-bg} ? ($style->{-bg} // -1) : -1,
+            exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1,
+        );
+    }
     
     sub new($terminal_space, $mapper, $blank = '.') {
         bless {
@@ -35,11 +54,7 @@ package Renderers::Naive {
         return unless defined $mapper;
         my $style = $mapper->('DEFAULT');
         confess "Invalid material DEFAULT" if !defined $style;
-        confess "style must be a hashref" unless ref($style) eq 'HASH';
-
-        my $fg = exists $style->{-fg} ? ($style->{-fg} // -1) : -1;
-        my $bg = exists $style->{-bg} ? ($style->{-bg} // -1) : -1;
-        my $attrs = exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1;
+        my ($fg, $bg, $attrs) = _style_fields($style);
 
         my $cols = Termlib::cols() - 1;
         my $rows = Termlib::rows();
@@ -206,6 +221,10 @@ package Renderers::DoubleBuffering {
         packstr
         term
         mapper
+        theme
+        static_cache
+        frame_cache
+        frame_stamp
     );
 
     sub _quantize_xy($pos_vec) {
@@ -213,16 +232,107 @@ package Renderers::DoubleBuffering {
         return (int($col), int($row));
     }
 
-    sub new($terminal_space, $H, $W, $mapper, $blank = '.') {
-        my $packstr = "l4";
-        confess "missing material mapper" unless defined $mapper;
-        my $style = $mapper->('DEFAULT');
-        confess "Invalid material DEFAULT" if !defined $style;
-        confess "style must be a hashref" unless ref($style) eq 'HASH';
+    sub _style_fields($style) {
+        confess "missing style" unless defined $style;
+        if (ref($style) eq 'TerminalStyle') {
+            return (
+                defined($style->fg) ? $style->fg : -1,
+                defined($style->bg) ? $style->bg : -1,
+                defined($style->attrs) ? $style->attrs : -1,
+            );
+        }
 
-        my $fg = exists $style->{-fg} ? ($style->{-fg} // -1) : -1;
-        my $bg = exists $style->{-bg} ? ($style->{-bg} // -1) : -1;
-        my $attrs = exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1;
+        confess "style must support fg/bg/attrs or be a hashref"
+            unless ref($style) eq 'HASH';
+        return (
+            exists $style->{-fg} ? ($style->{-fg} // -1) : -1,
+            exists $style->{-bg} ? ($style->{-bg} // -1) : -1,
+            exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1,
+        );
+    }
+
+    sub _build_resolver($resolver) {
+        return {
+            theme => $resolver,
+            mapper => undef,
+        } if defined($resolver) && ref($resolver) && $resolver->can('border');
+
+        return {
+            theme => undef,
+            mapper => $resolver,
+        };
+    }
+
+    sub _default_material($self) {
+        return 'DEFAULT' if defined $self->{theme};
+        return undef;
+    }
+
+    sub _style_from_opts_or_material($self, $x, $y, %opts) {
+        return (
+            $opts{-fg},
+            $opts{-bg},
+            $opts{-attrs},
+        ) if exists($opts{-fg}) || exists($opts{-bg}) || exists($opts{-attrs});
+
+        my $material = exists($opts{-material}) ? $opts{-material} : $self->_default_material;
+        my $style = $self->_resolve_material_style($material, $x, $y);
+        return _style_fields($style);
+    }
+
+    sub _resolve_material_style($self, $material, $x = 0, $y = 0) {
+        return $self->mapper->style($material) unless defined $self->{theme};
+
+        my $cache_class = $self->theme->material_cache_class($material);
+        my $cache_key = $self->theme->material_cache_key($self->{frame_stamp}, $x, $y, $material);
+        my $cache = $cache_class eq 'STATIC_UNIFORM'
+            ? $self->{static_cache}{material}
+            : $self->{frame_cache}{material};
+
+        return $cache->{$cache_key} if exists $cache->{$cache_key};
+        my $style = $self->theme->style($material,
+            x => $x,
+            y => $y,
+            dt => $self->{frame_stamp},
+            renderer_width => $self->width,
+            renderer_height => $self->height,
+        );
+        $cache->{$cache_key} = $style;
+        return $style;
+    }
+
+    sub _resolve_border_style($self, $border_material, $x = 0, $y = 0, $edge = 'CENTER') {
+        confess "render_border requires theme with border support"
+            unless defined $self->{theme};
+
+        my $cache_class = $self->theme->border_cache_class($border_material);
+        my $cache_key = $self->theme->border_cache_key($self->{frame_stamp}, $x, $y, $border_material, $edge);
+        my $cache = $cache_class eq 'STATIC_UNIFORM'
+            ? $self->{static_cache}{border}
+            : $self->{frame_cache}{border};
+
+        return $cache->{$cache_key} if exists $cache->{$cache_key};
+        my $style = $self->theme->border($border_material,
+            x => $x,
+            y => $y,
+            edge => $edge,
+            dt => $self->{frame_stamp},
+            renderer_width => $self->width,
+            renderer_height => $self->height,
+        );
+        $cache->{$cache_key} = $style;
+        return $style;
+    }
+
+    sub new($terminal_space, $H, $W, $resolver, $blank = '.') {
+        my $packstr = "l4";
+        confess "missing material mapper or theme" unless defined $resolver;
+        my $resolved = _build_resolver($resolver);
+        my $style = defined($resolved->{theme})
+            ? $resolved->{theme}->style('DEFAULT')
+            : $resolved->{mapper}->('DEFAULT');
+        confess "Invalid material DEFAULT" if !defined $style;
+        my ($fg, $bg, $attrs) = _style_fields($style);
         my @default = (ord($blank), $fg, $bg, $attrs);
 
         my $bbuf = Buffer2D::new($packstr, $H, $W, \@default, -autoclip => 1);
@@ -236,21 +346,22 @@ package Renderers::DoubleBuffering {
             width => $W,
             packstr => $packstr,
             term => Termlib::new(),
-            mapper => $mapper,
+            mapper => $resolved->{mapper},
+            theme => $resolved->{theme},
+            static_cache => { material => {}, border => {} },
+            frame_cache => { material => {}, border => {} },
+            frame_stamp => 0,
         }, __PACKAGE__;
 
         $self;
     }
 
     sub initscr($self) {
-        my $mapper = $self->mapper;
-        my $style = $mapper->('DEFAULT');
+        my $style = defined($self->{theme})
+            ? $self->{theme}->style('DEFAULT')
+            : $self->mapper->('DEFAULT');
         confess "Invalid material DEFAULT" if !defined $style;
-        confess "style must be a hashref" unless ref($style) eq 'HASH';
-
-        my $fg = exists $style->{-fg} ? ($style->{-fg} // -1) : -1;
-        my $bg = exists $style->{-bg} ? ($style->{-bg} // -1) : -1;
-        my $attrs = exists $style->{-attrs} ? ($style->{-attrs} // -1) : -1;
+        my ($fg, $bg, $attrs) = _style_fields($style);
 
         my $cols = $self->width;
         my $rows = $self->height;
@@ -287,10 +398,6 @@ package Renderers::DoubleBuffering {
         $opts{-justify} //= 'left';
 
 
-        my $fg = $opts{-fg};
-        my $bg = $opts{-bg};
-        my $attrs = $opts{-attrs};
-
         my $pos = $pos_vec * $self->terminal_space;
         if ($opts{-justify} eq 'right') {
             $pos *= Matrix3::translate(-length($text), 0);
@@ -298,6 +405,7 @@ package Renderers::DoubleBuffering {
             $pos *= Matrix3::translate(-length($text)/2, 0);
         }
         my ($col, $row) = _quantize_xy($pos);
+        my ($fg, $bg, $attrs) = $self->_style_from_opts_or_material($col, $row, %opts);
 
         my @unpacked;
         for my $codepo (split //u, $text) {
@@ -312,6 +420,13 @@ package Renderers::DoubleBuffering {
         $self->render_text($pos_vec, $self->blank x $length, %opts);
     }
 
+    sub render_rect($self, $pos_vec, $w, $h, %opts) {
+        for my $row (0 .. $h - 1) {
+            my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
+            $self->render_text($row_pos, $self->blank x $w, %opts);
+        }
+    }
+
     sub _render_quad($self, $pos_vec, $h, $w, %opts) {
         for my $row (0 .. $h - 1) {
             my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
@@ -320,6 +435,11 @@ package Renderers::DoubleBuffering {
     }
 
     sub render_quad($self, $pos_vec, $quad) {
+        if (defined $self->{theme}) {
+            $self->render_rect($pos_vec, $quad->width, $quad->height,
+                -material => $quad->material);
+            return;
+        }
         $self->_render_quad($pos_vec, $quad->height, $quad->width,
             $self->mapper->style($quad->material)->%*);
     }
@@ -369,7 +489,9 @@ package Renderers::DoubleBuffering {
     sub render_line($self, $pos_start, $pos_end, $material) {
         my ($x0, $y0) = $pos_start->@*;
         my ($x1, $y1) = $pos_end->@*;
-        my %opts = $self->mapper->style($material)->%*;
+        my %opts = defined($self->{theme})
+            ? (-material => $material)
+            : $self->mapper->style($material)->%*;
         my $glyph = $self->{blank};
 
         my $dx = abs($x1 - $x0);
@@ -390,6 +512,41 @@ package Renderers::DoubleBuffering {
                 $err += $dx;
                 $y0 += $sy;
             }
+        }
+    }
+
+    sub render_border($self, $pos_vec, $w, $h, %opts) {
+        my $border_material = $opts{-border_material};
+        confess "render_border requires -border_material"
+            unless defined $border_material;
+
+        my @edges = (
+            [0, 0, 'TOP_LEFT', 0],
+            [$w - 1, 0, 'TOP_RIGHT', 2],
+            [0, $h - 1, 'BOTTOM_LEFT', 6],
+            [$w - 1, $h - 1, 'BOTTOM_RIGHT', 8],
+        );
+        for my $col (1 .. $w - 2) {
+            push @edges, [$col, 0, 'TOP', 1];
+            push @edges, [$col, $h - 1, 'BOTTOM', 7];
+        }
+        for my $row (1 .. $h - 2) {
+            push @edges, [0, $row, 'CENTER_LEFT', 3];
+            push @edges, [$w - 1, $row, 'CENTER_RIGHT', 5];
+        }
+
+        for my $entry (@edges) {
+            my ($dx, $dy, $edge, $glyph_idx) = $entry->@*;
+            my $cell_pos = $pos_vec + Matrix3::Vec::from_xy($dx, -$dy);
+            my $screen_pos = $cell_pos * $self->terminal_space;
+            my ($col, $row) = _quantize_xy($screen_pos);
+            my $border_style = $self->_resolve_border_style($border_material, $col, $row, $edge);
+            my $glyph = $border_style->border->[$glyph_idx];
+            $self->render_text($cell_pos, $glyph,
+                -fg => $border_style->fg,
+                -bg => $border_style->bg,
+                -attrs => $border_style->attrs,
+            );
         }
     }
 
@@ -441,6 +598,8 @@ package Renderers::DoubleBuffering {
 
         $self->term->write_batch(\@term_commands);
         $self->fbuf->sync($self->bbuf);
+        $self->{frame_cache} = { material => {}, border => {} };
+        $self->{frame_stamp}++;
     }
 
     sub reset($self) {
@@ -467,9 +626,9 @@ Renderers
 =head1 SYNOPSIS
 
     use Renderers;
-    my $renderer = Renderers::DoubleBuffering::new($T, $H, $W, $mapper, ' ');
+    my $renderer = Renderers::DoubleBuffering::new($T, $H, $W, $theme, ' ');
     $renderer->initscr;
-    $renderer->render_text($pos, "Hello");
+    $renderer->render_text($pos, "Hello", -material => 'DEFAULT');
     $renderer->flush;
 
 =head1 DESCRIPTION
@@ -480,8 +639,9 @@ Renderers::Naive writes directly to the terminal for every draw call.
 Renderers::DoubleBuffering writes into a back buffer and flushes the
 diff to the terminal.
 
-Both implement a shared API for text, quads, geometry, lines, and
-buffer blits.
+Both implement a shared API for text, rects, borders, geometry, lines, and
+buffer blits. The semantic renderer path resolves materials and border
+materials through L<Theme>.
 
 =head1 COMMON METHODS
 
@@ -489,12 +649,21 @@ buffer blits.
 
 =item render_text($pos_vec, $text, %opts)
 
-Renders text at a position. Supports C<-fg>, C<-bg>, C<-attrs> and
-justification via C<-justify>.
+Renders text at a position. Semantic callers should pass C<-material> and
+optional C<-justify>. The renderer also still accepts explicit C<-fg>,
+C<-bg>, and C<-attrs> for lower-level compatibility.
+
+=item render_rect($pos_vec, $w, $h, %opts)
+
+Renders a filled rectangle. Semantic callers should pass C<-material>.
+
+=item render_border($pos_vec, $w, $h, %opts)
+
+Renders a border rectangle. Semantic callers should pass C<-border_material>.
 
 =item render_quad($pos_vec, $quad)
 
-Renders a rectangle from a Quad material.
+Compatibility wrapper around rectangle rendering for older quad-based callers.
 
 =item render_geometry($pos_vec, $geo)
 

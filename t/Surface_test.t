@@ -8,6 +8,7 @@ use Geometry3;
 use MaterialMapper;
 use Quad;
 use Surface;
+use TerminalStyle;
 
 sub vect($x, $y) { Matrix3::Vec::from_xy($x, $y) }
 
@@ -22,7 +23,7 @@ subtest 'render_text writes glyphs and styles' => sub {
 
 subtest 'render_line uses material style' => sub {
     my $mat = MaterialMapper::from_callback(sub ($mat) {
-        return { -bg => 5 } if $mat eq 'LINE';
+        return TerminalStyle::new(-bg => 5) if $mat eq 'LINE';
     });
     my $surface = Surface::new(3, 5, -material => $mat);
     $surface->render_line(vect(0, 0), vect(2, 0), 'LINE');
@@ -36,7 +37,7 @@ subtest 'render_line uses material style' => sub {
 
 subtest 'render_quad fills rectangle' => sub {
     my $mat = MaterialMapper::from_callback(sub ($mat) {
-        return { -bg => 9 } if $mat eq 'BG';
+        return TerminalStyle::new(-bg => 9) if $mat eq 'BG';
     });
     my $surface = Surface::new(3, 4, -material => $mat);
     my $quad = Quad::from_wh(2, 2, 'BG');
@@ -62,7 +63,7 @@ subtest 'render_geometry draws text at positions' => sub {
 
 subtest 'layers compose via successive draws' => sub {
     my $mat = MaterialMapper::from_callback(sub ($mat) {
-        return { -bg => 3 } if $mat eq 'BG';
+        return TerminalStyle::new(-bg => 3) if $mat eq 'BG';
     });
     my $surface = Surface::new(2, 2, -material => $mat);
     my $quad = Quad::from_wh(2, 2, 'BG');

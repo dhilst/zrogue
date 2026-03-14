@@ -186,8 +186,8 @@ Options:
 
 =item * C<-material>
 
-L<MaterialMapper> instance that maps a material name to a style hashref containing
-C<-fg>, C<-bg>, and/or C<-attrs>.
+L<MaterialMapper> instance that maps a material name to a L<TerminalStyle>
+containing C<-fg>, C<-bg>, and/or C<-attrs>.
 
 =item * C<-blank>
 

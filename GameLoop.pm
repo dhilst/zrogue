@@ -18,8 +18,8 @@ package GameLoop {
     use Renderers;
     use Termlib;
 
-    sub new($mapper, @widgets) {
-        confess "missing mapper" unless defined $mapper;
+    sub new($theme, @widgets) {
+        confess "missing theme" unless defined $theme;
         confess "missing widgets" unless @widgets;
 
         bless {
@@ -27,7 +27,7 @@ package GameLoop {
             frame_interval => 1 / 60,
             input => Input::new(),
             localtime => time,
-            mapper => $mapper,
+            theme => $theme,
             renderer => undef,
             resized => 1,
             term => Termlib::new(),
@@ -43,7 +43,7 @@ package GameLoop {
             terminal_space($cols, $rows),
             $rows,
             $cols - 1,
-            $self->{mapper},
+            $self->{theme},
             $self->{blank},
         );
         $renderer->initscr();

@@ -6,9 +6,7 @@ use Carp;
 use Exporter qw(import);
 
 use lib ".";
-use BorderMapper;
 use Event;
-use MaterialMapper;
 use Matrix3;
 
 our @EXPORT_OK = qw(
@@ -53,15 +51,6 @@ sub _resolve_int($app, $renderer, $node, $value, $default = 0) {
         ? _resolve($app, $renderer, $node, $value)
         : $default;
     return int($v // 0);
-}
-
-sub _style_opts($app, $renderer, $node, $props) {
-    my %style;
-    for my $k (qw(fg bg attrs justify)) {
-        my $v = _resolve($app, $renderer, $node, $props->{$k});
-        $style{"-$k"} = $v if defined $v;
-    }
-    return %style;
 }
 
 sub _current_parent() {
@@ -172,40 +161,7 @@ package TML::Runtime::App {
         confess "state must be a hashref"
             unless ref($state) eq 'HASH';
 
-        my $default_fg = exists $opts->{default_fg} ? $opts->{default_fg} : -1;
-        my $default_bg = exists $opts->{default_bg} ? $opts->{default_bg} : -1;
-        my $default_attrs = exists $opts->{default_attrs} ? $opts->{default_attrs} : -1;
-
-        my $mapper = $opts->{material_mapper} // $opts->{mapper};
-        if (!defined $mapper) {
-            my $default_style = {
-                -fg => $default_fg,
-                -bg => $default_bg,
-                -attrs => $default_attrs,
-            };
-            $mapper = MaterialMapper::from_callback(sub ($material) {
-                return $default_style;
-            });
-        }
-        confess "material_mapper must support style()"
-            unless ref($mapper) && $mapper->can('style');
-
-        my $border_mapper = $opts->{border_mapper};
-        if (!defined $border_mapper) {
-            $border_mapper = BorderMapper::from_callback(sub ($material) {
-                state %styles = (
-                    ASCII  => "+-+\n| |\n+-+",
-                    SINGLE => "┌─┐\n│ │\n└─┘",
-                );
-                return $styles{$material} // $styles{SINGLE};
-            });
-        }
-        confess "border_mapper must support style()"
-            unless ref($border_mapper) && $border_mapper->can('style');
-
         return bless {
-            mapper => $mapper,
-            border_mapper => $border_mapper,
             root => undef,
             state => $state,
             on_key => [],
@@ -220,8 +176,6 @@ package TML::Runtime::App {
         }, $class;
     }
 
-    sub mapper($self) { $self->{mapper} }
-    sub border_mapper($self) { $self->{border_mapper} }
     sub state($self) { $self->{state} }
 
     sub _cache_node_id($self, $node) {
@@ -644,48 +598,8 @@ package TML::Runtime::App {
         my $h = $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height', 0);
         return if $w <= 0 || $h <= 0;
 
-        my %style_props = (
-            fg => $props->{fg},
-            bg => $props->{bg},
-            attrs => $props->{attrs},
-        );
-        my %is_cellwise = map {
-            $_ => (ref($style_props{$_}) eq 'CODE' ? 1 : 0)
-        } keys %style_props;
-        my $cellwise = $is_cellwise{fg} || $is_cellwise{bg} || $is_cellwise{attrs};
-
-        if (!$cellwise) {
-            my %style;
-            for my $k (qw(fg bg attrs)) {
-                my $v = TML::_resolve($self, $renderer, $node, $style_props{$k});
-                $style{"-$k"} = $v if defined $v;
-            }
-            for my $row (0 .. $h - 1) {
-                my $row_pos = $local + Matrix3::Vec::from_xy(0, -$row);
-                $renderer->render_text($row_pos, ' ' x $w, %style);
-            }
-            return;
-        }
-
-        my %const;
-        for my $k (qw(fg bg attrs)) {
-            next if $is_cellwise{$k};
-            $const{$k} = TML::_resolve($self, $renderer, $node, $style_props{$k});
-        }
-
-        for my $row (0 .. $h - 1) {
-            for my $col (0 .. $w - 1) {
-                my %style;
-                for my $k (qw(fg bg attrs)) {
-                    my $v = $is_cellwise{$k}
-                        ? $style_props{$k}->($self, $renderer, $node, $col, $row, $w, $h)
-                        : $const{$k};
-                    $style{"-$k"} = $v if defined $v;
-                }
-                my $cell_pos = $local + Matrix3::Vec::from_xy($col, -$row);
-                $renderer->render_text($cell_pos, ' ', %style);
-            }
-        }
+        my $material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+        $renderer->render_rect($local, $w, $h, -material => $material);
     }
 
     sub _render_bbox($self, $renderer, $node, $local, $parent_w = undef, $parent_h = undef) {
@@ -695,32 +609,14 @@ package TML::Runtime::App {
         );
         return if $w <= 0 || $h <= 0;
 
-        my $border_name = TML::_resolve($self, $renderer, $node, $props->{border} // 'SINGLE');
-        my $chars = $self->{border_mapper}->style($border_name);
-        my ($tl, $tc, $tr) = $chars->[0]->@*;
-        my ($ml, $mc, $mr) = $chars->[1]->@*;
-        my ($bl, $bc, $br) = $chars->[2]->@*;
-
         my $material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
-        my %style = $self->{mapper}->style($material)->%*;
-        for my $k (qw(fg bg attrs)) {
-            my $v = TML::_resolve($self, $renderer, $node, $props->{$k});
-            $style{"-$k"} = $v if defined $v;
-        }
+        my $border_material = TML::_resolve($self, $renderer, $node, $props->{border_material} // 'DEFAULT');
 
-        my $middle_len = $w > 2 ? ($w - 2) : 0;
-        my $top = $tl . ($tc x $middle_len) . $tr;
-        my $bottom = $bl . ($bc x $middle_len) . $br;
-        $renderer->render_text($local, $top, %style);
-        for my $row (1 .. $h - 2) {
-            my $mid = $ml . ($mc x $middle_len) . $mr;
-            my $mid_pos = $local + Matrix3::Vec::from_xy(0, -$row);
-            $renderer->render_text($mid_pos, $mid, %style);
+        if ($w > 2 && $h > 2) {
+            my $inner_origin = $local + Matrix3::Vec::from_xy(1, -1);
+            $renderer->render_rect($inner_origin, $w - 2, $h - 2, -material => $material);
         }
-        if ($h > 1) {
-            my $bottom_pos = $local + Matrix3::Vec::from_xy(0, -($h - 1));
-            $renderer->render_text($bottom_pos, $bottom, %style);
-        }
+        $renderer->render_border($local, $w, $h, -border_material => $border_material);
 
         my $content_base = $local + Matrix3::Vec::from_xy($content_x, -$content_y);
         my $inner_w = $w - 2;
@@ -740,8 +636,11 @@ package TML::Runtime::App {
             $self->_render_rect($renderer, $node, $local, $parent_w, $parent_h);
         } elsif ($node->{type} eq 'Text') {
             my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
-            my %style = TML::_style_opts($self, $renderer, $node, $props);
-            $renderer->render_text($local, "$text", %style);
+            my $material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+            my $justify = TML::_resolve($self, $renderer, $node, $props->{justify});
+            my %opts = (-material => $material);
+            $opts{-justify} = $justify if defined $justify;
+            $renderer->render_text($local, "$text", %opts);
         } elsif ($node->{type} eq 'VBox' || $node->{type} eq 'HBox') {
             my ($placements, $w, $h) = $self->_container_layout(
                 $renderer, $node, $node->{type}, $parent_w, $parent_h
@@ -819,34 +718,20 @@ TML - Block-based Perl EDSL for terminal widget trees
 =head1 SYNOPSIS
 
     use TML qw(App Layer VBox HBox BBox Rect Text OnKey OnUpdate);
-    use MaterialMapper;
-    use BorderMapper;
-
-    my $material = MaterialMapper::from_callback(sub ($name) {
-        return { -fg => 0xffffff, -bg => 0x202020 } if $name eq 'DEFAULT';
-        return { -fg => 0x8cf29a } if $name eq 'ACCENT';
-    });
-
-    my $borders = BorderMapper::from_callback(sub ($name) {
-        return "+-+\n| |\n+-+" if $name eq 'ASCII';
-        return "┌─┐\n│ │\n└─┘";
-    });
 
     my $ui = App {
         OnKey 'q' => sub ($app, $event) { $app->quit; };
 
         BBox {
             HBox {
-                Text {} -text => 'Left';
-                Text {} -text => 'Center';
-                Text {} -text => 'Right';
+                Text {} -text => 'Left',   -material => 'ACCENT';
+                Text {} -text => 'Center', -material => 'ACCENT';
+                Text {} -text => 'Right',  -material => 'ACCENT';
             } -gap => 2, -align => 'center';
         } -x => -10, -y => 4,
-          -border => 'ASCII',
+          -border_material => 'FRAME',
           -material => 'ACCENT';
-    } -state => {},
-      -material_mapper => $material,
-      -border_mapper => $borders;
+    } -state => {};
 
 =head1 DESCRIPTION
 
@@ -857,6 +742,41 @@ C<render($renderer)>).
 There is no string parsing or compile step. Widgets are declared using Perl
 function calls (C<App>, C<VBox>, C<Text>, etc.) and options passed as key/value
 pairs.
+
+=head1 REQUIREMENTS
+
+TML currently assumes the following runtime contracts:
+
+=over 4
+
+=item *
+
+The app object returned by C<App> must provide C<update($dt, @events)> and
+C<render($renderer)> so it can be driven by L<GameLoop>.
+
+=item *
+
+TML should be style agnostic. Node styling should follow from a semantic
+C<material> string property, not from terminal-specific style fields on nodes.
+
+=item *
+
+TML should not import or depend directly on mapper or style classes; semantic
+material resolution belongs later in the rendering pipeline.
+
+=item *
+
+The renderer passed to C<render> must support the drawing methods used by the
+node walker, including C<render_text>, C<render_rect>, C<render_border>, and
+when applicable C<width> and C<height> for percentage-based layout.
+
+=item *
+
+Node trees are built from plain Perl data structures and are expected to remain
+well-formed: each node has a C<type>, a C<props> hashref, and a C<children>
+arrayref.
+
+=back
 
 =head1 EXPORTS
 
@@ -877,20 +797,6 @@ Supported app options:
 =item * C<-state> (hashref, default C<{}>)
 
 Mutable state bag exposed as C<$app->state>.
-
-=item * C<-material_mapper> / C<-mapper>
-
-Object that implements C<style($name)> and returns a style hashref compatible
-with C<MaterialMapper>.
-
-=item * C<-border_mapper>
-
-Object that implements C<style($name)> and returns a normalized 3x3 border
-matrix compatible with C<BorderMapper>.
-
-=item * C<-default_fg>, C<-default_bg>, C<-default_attrs>
-
-Used only when no explicit material mapper is supplied.
 
 =back
 
@@ -952,7 +858,7 @@ Options:
 
 =item * C<-text> (string or coderef)
 
-=item * C<-fg>, C<-bg>, C<-attrs>
+=item * C<-material> (semantic material key, default C<DEFAULT>)
 
 =item * C<-justify> (passed to renderer; e.g. C<left>, C<center>, C<right>)
 
@@ -971,12 +877,6 @@ Options:
 =item * C<-fg>, C<-bg>, C<-attrs>
 
 =back
-
-If any style option is a coderef, it is evaluated per cell with signature:
-
-    sub ($app, $renderer, $node, $col, $row, $w, $h) { ... }
-
-This enables gradients and per-cell effects.
 
 =head2 VBox and HBox
 
@@ -1028,21 +928,9 @@ Options:
 
 =over 4
 
-=item * C<-border> (border style key, default C<SINGLE>)
+=item * C<-material> (fill material key, default C<DEFAULT>)
 
-Resolved through C<border_mapper->style($name)> returning a 3x3 char matrix:
-
-    [ [tl, t, tr],
-      [l,  c, r ],
-      [bl, b, br] ]
-
-=item * C<-material> (material key, default C<DEFAULT>)
-
-Resolved through C<material_mapper->style($name)> for border styling.
-
-=item * C<-fg>, C<-bg>, C<-attrs>
-
-Optional direct style overrides for border cells.
+=item * C<-border_material> (border material key, default C<DEFAULT>)
 
 =item * C<-width>, C<-height>
 
@@ -1059,14 +947,6 @@ Content alignment inside the inner area (after subtracting border thickness).
 C<App { ... }> returns C<TML::Runtime::App> with:
 
 =over 4
-
-=item * C<mapper>
-
-Material mapper used by C<GameLoop> renderer setup.
-
-=item * C<border_mapper>
-
-Border mapper used by C<BBox>.
 
 =item * C<state>
 
@@ -1088,5 +968,9 @@ C<update>: C<0> stop loop, C<-1> skip render for this widget this frame,
 truthy values render normally.
 
 =back
+
+=head1 SEE ALSO
+
+L<GameLoop>, L<Renderers>, L<Theme>, L<TerminalBorderStyle>
 
 =cut
