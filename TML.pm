@@ -17,6 +17,15 @@ our @EXPORT_OK = qw(
     BBox
     Rect
     Text
+    InputRoot
+    FocusScope
+    Button
+    Toggle
+    TextField
+    List
+    FieldList
+    TextViewport
+    ButtonRow
     OnKey
     OnUpdate
 );
@@ -131,6 +140,51 @@ sub Text :prototype(&;@) {
     _build_node('Text', $block, @args);
 }
 
+sub InputRoot :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('InputRoot', $block, @args);
+}
+
+sub FocusScope :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('FocusScope', $block, @args);
+}
+
+sub Button :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('Button', $block, @args);
+}
+
+sub Toggle :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('Toggle', $block, @args);
+}
+
+sub TextField :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('TextField', $block, @args);
+}
+
+sub List :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('List', $block, @args);
+}
+
+sub FieldList :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('FieldList', $block, @args);
+}
+
+sub TextViewport :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('TextViewport', $block, @args);
+}
+
+sub ButtonRow :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('ButtonRow', $block, @args);
+}
+
 sub OnKey :prototype($$) {
     my ($char, $cb) = @_;
     confess "OnKey used outside App{}"
@@ -173,10 +227,1103 @@ package TML::Runtime::App {
             layout_tree_sig => undef,
             layout_size_sig => undef,
             layout_dynamic_nodes => {},
+            interactive_state => {
+                focused_node_id => undef,
+                active_root_id => undef,
+            },
         }, $class;
     }
 
     sub state($self) { $self->{state} }
+
+    sub _interactive_node_id($self, $node) {
+        return $self->_cache_node_id($node);
+    }
+
+    sub _interactive_root_nodes($self, $node = undef, $roots = undef) {
+        $node //= $self->{root};
+        $roots //= [];
+        return $roots unless defined $node;
+
+        if (($node->{type} // '') eq 'InputRoot') {
+            push @$roots, $node;
+        }
+
+        for my $child ($node->{children}->@*) {
+            $self->_interactive_root_nodes($child, $roots);
+        }
+
+        return $roots;
+    }
+
+    sub _is_focusable_node($self, $node) {
+        my $type = $node->{type} // '';
+        return 1 if $type eq 'Button';
+        return 1 if $type eq 'Toggle';
+        return 1 if $type eq 'TextField';
+        return 1 if $type eq 'List';
+        return 1 if $type eq 'FieldList';
+        return 1 if $type eq 'TextViewport';
+        return 0;
+    }
+
+    sub _is_disabled_node($self, $node) {
+        my $disabled = TML::_resolve($self, undef, $node, $node->{props}{disabled} // 0);
+        return $disabled ? 1 : 0;
+    }
+
+    sub _collect_focusable_nodes($self, $node, $accum = undef) {
+        $accum //= [];
+        return $accum unless defined $node;
+
+        if ($self->_is_focusable_node($node) && !$self->_is_disabled_node($node)) {
+            push @$accum, $node;
+        }
+
+        for my $child ($node->{children}->@*) {
+            $self->_collect_focusable_nodes($child, $accum);
+        }
+
+        return $accum;
+    }
+
+    sub _interactive_context($self) {
+        my $roots = $self->_interactive_root_nodes();
+        return undef unless @$roots;
+
+        my $state = $self->{interactive_state};
+        my $root = $roots->[0];
+        my $root_id = $self->_interactive_node_id($root);
+        my $focusables = $self->_collect_focusable_nodes($root);
+        my %focusable_by_id = map { ($self->_interactive_node_id($_) => $_) } @$focusables;
+        my (%node_by_id, %parent_by_id, %children_by_id);
+        $self->_interactive_tree_walk($root, undef, \%node_by_id, \%parent_by_id, \%children_by_id);
+
+        my $focused_id = $state->{focused_node_id};
+        if (!defined($focused_id) || !exists($focusable_by_id{$focused_id})) {
+            $focused_id = @$focusables ? $self->_interactive_node_id($focusables->[0]) : undef;
+            $state->{focused_node_id} = $focused_id;
+        }
+
+        $state->{active_root_id} = $root_id;
+        my $focused = defined($focused_id) ? $focusable_by_id{$focused_id} : undef;
+
+        return {
+            root => $root,
+            root_id => $root_id,
+            focusables => $focusables,
+            focusable_by_id => \%focusable_by_id,
+            focused => $focused,
+            focused_id => $focused_id,
+            node_by_id => \%node_by_id,
+            parent_by_id => \%parent_by_id,
+            children_by_id => \%children_by_id,
+        };
+    }
+
+    sub _interactive_tree_walk($self, $node, $parent, $node_by_id, $parent_by_id, $children_by_id) {
+        return unless defined $node;
+        my $node_id = $self->_interactive_node_id($node);
+        $node_by_id->{$node_id} = $node;
+        $parent_by_id->{$node_id} = defined($parent) ? $self->_interactive_node_id($parent) : undef;
+        $children_by_id->{$node_id} = [ $node->{children}->@* ];
+        for my $child ($node->{children}->@*) {
+            $self->_interactive_tree_walk($child, $node, $node_by_id, $parent_by_id, $children_by_id);
+        }
+        return;
+    }
+
+    sub _is_navigation_container($self, $node) {
+        return 0 unless defined $node;
+        my $type = $node->{type} // '';
+        return 1 if $type eq 'InputRoot';
+        return 1 if $type eq 'FocusScope';
+        return 1 if $type eq 'VBox';
+        return 1 if $type eq 'HBox';
+        return 1 if $type eq 'ButtonRow';
+        return 1 if $type eq 'BBox';
+        return 1 if $type eq 'Layer';
+        return 0;
+    }
+
+    sub _is_composite_focus_widget($self, $node) {
+        return 0 unless defined $node;
+        my $type = $node->{type} // '';
+        return 1 if $type eq 'List';
+        return 1 if $type eq 'FieldList';
+        return 1 if $type eq 'TextViewport';
+        return 0;
+    }
+
+    sub _interactive_parent($self, $ctx, $node) {
+        return undef unless defined $ctx && defined $node;
+        my $node_id = $self->_interactive_node_id($node);
+        my $parent_id = $ctx->{parent_by_id}{$node_id};
+        return undef unless defined $parent_id;
+        return $ctx->{node_by_id}{$parent_id};
+    }
+
+    sub _node_is_descendant_of($self, $ctx, $node, $ancestor) {
+        return 0 unless defined $ctx && defined $node && defined $ancestor;
+        my $cursor = $node;
+        while (defined $cursor) {
+            return 1 if $self->_interactive_node_id($cursor) == $self->_interactive_node_id($ancestor);
+            $cursor = $self->_interactive_parent($ctx, $cursor);
+        }
+        return 0;
+    }
+
+    sub _first_focusable_descendant($self, $ctx, $node) {
+        return undef unless defined $ctx && defined $node;
+        return $node if $self->_is_focusable_node($node) && !$self->_is_disabled_node($node);
+        for my $child ($ctx->{children_by_id}{ $self->_interactive_node_id($node) }->@*) {
+            my $found = $self->_first_focusable_descendant($ctx, $child);
+            return $found if defined $found;
+        }
+        return undef;
+    }
+
+    sub _container_focus_branches($self, $ctx, $container) {
+        return [] unless defined $ctx && defined $container;
+        my $branches = [];
+        for my $child ($ctx->{children_by_id}{ $self->_interactive_node_id($container) }->@*) {
+            my $target = $self->_first_focusable_descendant($ctx, $child);
+            next unless defined $target;
+            push @$branches, {
+                child => $child,
+                target => $target,
+            };
+        }
+        return $branches;
+    }
+
+    sub _nearest_branch_container($self, $ctx, $node) {
+        return undef unless defined $ctx && defined $node;
+        my $cursor = $self->_interactive_parent($ctx, $node);
+        while (defined $cursor) {
+            if ($self->_is_navigation_container($cursor)) {
+                my $branches = $self->_container_focus_branches($ctx, $cursor);
+                if (@$branches > 1) {
+                    for my $branch (@$branches) {
+                        return $cursor
+                            if $self->_node_is_descendant_of($ctx, $node, $branch->{child});
+                    }
+                }
+            }
+            $cursor = $self->_interactive_parent($ctx, $cursor);
+        }
+        return undef;
+    }
+
+    sub _navigation_owner_for_focus($self, $ctx, $node) {
+        return undef unless defined $ctx && defined $node;
+        my $container = $self->_nearest_branch_container($ctx, $node);
+        return $container if $self->_container_has_exit_branch($ctx, $container);
+        return $node if $self->_is_composite_focus_widget($node);
+        return $container;
+    }
+
+    sub _container_has_exit_branch($self, $ctx, $container) {
+        return 0 unless defined $ctx && defined $container;
+        my $parent = $self->_interactive_parent($ctx, $container);
+        while (defined $parent && !$self->_is_navigation_container($parent)) {
+            $parent = $self->_interactive_parent($ctx, $parent);
+        }
+        return 0 unless defined $parent;
+
+        my $branches = $self->_container_focus_branches($ctx, $parent);
+        return 0 unless @$branches > 1;
+
+        for my $branch (@$branches) {
+            return 1 if $self->_node_is_descendant_of($ctx, $container, $branch->{child});
+        }
+
+        return 0;
+    }
+
+    sub _move_focus_within_container($self, $ctx, $container, $current_node, $direction) {
+        return 0 unless defined $ctx && defined $container && defined $current_node;
+        my $branches = $self->_container_focus_branches($ctx, $container);
+        return 0 unless @$branches > 1;
+
+        my $current_idx;
+        for my $idx (0 .. $#$branches) {
+            if ($self->_node_is_descendant_of($ctx, $current_node, $branches->[$idx]{child})) {
+                $current_idx = $idx;
+                last;
+            }
+        }
+        return 0 unless defined $current_idx;
+
+        my $next_idx = $current_idx + $direction;
+        $next_idx = $#$branches if $next_idx < 0;
+        $next_idx = 0 if $next_idx > $#$branches;
+        my $target = $branches->[$next_idx]{target};
+        return 0 unless defined $target;
+
+        $self->{interactive_state}{focused_node_id} = $self->_interactive_node_id($target);
+        return 1;
+    }
+
+    sub _jump_focus_out_of_container($self, $ctx, $current_container, $direction) {
+        return 0 unless defined $ctx && defined $current_container;
+        my $parent = $self->_interactive_parent($ctx, $current_container);
+        while (defined $parent && !$self->_is_navigation_container($parent)) {
+            $parent = $self->_interactive_parent($ctx, $parent);
+        }
+        return 0 unless defined $parent;
+
+        my $branches = $self->_container_focus_branches($ctx, $parent);
+        return 0 unless @$branches > 1;
+
+        my $current_idx;
+        for my $idx (0 .. $#$branches) {
+            if ($self->_node_is_descendant_of($ctx, $current_container, $branches->[$idx]{child})) {
+                $current_idx = $idx;
+                last;
+            }
+        }
+        return 0 unless defined $current_idx;
+
+        my $next_idx = $current_idx + $direction;
+        $next_idx = $#$branches if $next_idx < 0;
+        $next_idx = 0 if $next_idx > $#$branches;
+        my $target = $branches->[$next_idx]{target};
+        return 0 unless defined $target;
+
+        $self->{interactive_state}{focused_node_id} = $self->_interactive_node_id($target);
+        return 1;
+    }
+
+    sub _focus_keymap_defaults($self) {
+        return {
+            next => ['j'],
+            prev => ['k'],
+            exit_next => ['J'],
+            exit_prev => ['K'],
+        };
+    }
+
+    sub _keymap_tokens($self, $value, $label) {
+        if (!defined $value) {
+            return [];
+        }
+        if (!ref($value)) {
+            return [$value];
+        }
+        confess "$label keymap entry must be a string or array ref"
+            unless ref($value) eq 'ARRAY';
+        for my $token ($value->@*) {
+            confess "$label keymap token must be a string"
+                if !defined($token) || ref($token);
+        }
+        return [ $value->@* ];
+    }
+
+    sub _focus_keymap_for($self, $ctx, $container) {
+        my $defaults = $self->_focus_keymap_defaults();
+        my %map = map { ($_ => [ $defaults->{$_}->@* ]) } keys $defaults->%*;
+
+        my @sources;
+        push @sources, $ctx->{root} if defined $ctx && defined $ctx->{root};
+        push @sources, $container if defined $container;
+
+        for my $source (@sources) {
+            next unless defined $source;
+            my $keymap = $source->{props}{keymap};
+            next unless defined $keymap;
+            confess "keymap must be a hashref"
+                unless ref($keymap) eq 'HASH';
+            for my $action (keys $keymap->%*) {
+                next unless exists $map{$action};
+                $map{$action} = $self->_keymap_tokens($keymap->{$action}, $action);
+            }
+        }
+
+        return \%map;
+    }
+
+    sub _char_matches_action($self, $ctx, $container, $char, $action) {
+        my $keymap = $self->_focus_keymap_for($ctx, $container);
+        return scalar grep { $_ eq $char } $keymap->{$action}->@*;
+    }
+
+    sub _dispatch_navigation_action($self, $ctx, $focused, $char) {
+        return 0 unless defined $ctx && defined $focused;
+
+        my $container = $self->_nearest_branch_container($ctx, $focused);
+        if (defined $container) {
+            return $self->_move_focus_within_container($ctx, $container, $focused, 1)
+                if $self->_char_matches_action($ctx, $container, $char, 'next');
+            return $self->_move_focus_within_container($ctx, $container, $focused, -1)
+                if $self->_char_matches_action($ctx, $container, $char, 'prev');
+        }
+
+        my $owner = $self->_navigation_owner_for_focus($ctx, $focused);
+        if (defined $owner) {
+            return $self->_jump_focus_out_of_container($ctx, $owner, 1)
+                if $self->_char_matches_action($ctx, $owner, $char, 'exit_next');
+            return $self->_jump_focus_out_of_container($ctx, $owner, -1)
+                if $self->_char_matches_action($ctx, $owner, $char, 'exit_prev');
+        }
+
+        return 0;
+    }
+
+    sub _widget_label($self, $renderer, $node, $default = '') {
+        return TML::_resolve($self, $renderer, $node, $node->{props}{label} // $default);
+    }
+
+    sub _arrayref_prop($self, $node, $prop_name, $label) {
+        my $value = $node->{props}{$prop_name};
+        confess "$label requires -$prop_name array ref"
+            unless defined($value) && ref($value) eq 'ARRAY';
+        return $value;
+    }
+
+    sub _scalarref_prop($self, $node, $prop_name, $label) {
+        my $value = $node->{props}{$prop_name};
+        confess "$label requires -$prop_name scalar ref"
+            unless defined($value) && ref($value) eq 'SCALAR';
+        return $value;
+    }
+
+    sub _button_text($self, $renderer, $node) {
+        my $label = $self->_widget_label($renderer, $node, '');
+        return '[' . $label . ']';
+    }
+
+    sub _toggle_value_ref($self, $node) {
+        my $value_ref = $node->{props}{value_ref};
+        confess "Toggle requires -value_ref scalar ref"
+            unless defined($value_ref) && ref($value_ref) eq 'SCALAR';
+        return $value_ref;
+    }
+
+    sub _textfield_value_ref($self, $node) {
+        my $value_ref = $node->{props}{value_ref};
+        confess "TextField requires -value_ref scalar ref"
+            unless defined($value_ref) && ref($value_ref) eq 'SCALAR';
+        return $value_ref;
+    }
+
+    sub _toggle_text($self, $renderer, $node) {
+        my $value_ref = $self->_toggle_value_ref($node);
+        my $label = $self->_widget_label($renderer, $node, '');
+        my $mark = $$value_ref ? 'x' : ' ';
+        return '[' . $mark . '] ' . $label;
+    }
+
+    sub _textfield_inner_width($self, $renderer, $node, $parent_w = undef) {
+        my $props = $node->{props};
+        my $text = $self->_textfield_display_value($node);
+        my $natural = length($text);
+        $natural = 1 if $natural < 1;
+
+        my $width = exists($props->{width})
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width')
+            : $natural;
+        $width = 1 if !defined($width) || $width < 1;
+        return $width;
+    }
+
+    sub _textfield_active_ref($self, $node) {
+        my $state_key = '_textfield_active_ref';
+        $node->{props}{$state_key} = \($node->{props}{_textfield_active_value} //= 0)
+            unless exists $node->{props}{$state_key};
+        my $active_ref = $node->{props}{$state_key};
+        confess "TextField internal active state must be a scalar ref"
+            unless ref($active_ref) eq 'SCALAR';
+        return $active_ref;
+    }
+
+    sub _textfield_buffer_ref($self, $node) {
+        my $state_key = '_textfield_buffer_ref';
+        $node->{props}{$state_key} = \($node->{props}{_textfield_buffer_value} //= '')
+            unless exists $node->{props}{$state_key};
+        my $buffer_ref = $node->{props}{$state_key};
+        confess "TextField internal buffer state must be a scalar ref"
+            unless ref($buffer_ref) eq 'SCALAR';
+        return $buffer_ref;
+    }
+
+    sub _textfield_is_active($self, $node) {
+        my $active_ref = $self->_textfield_active_ref($node);
+        return $$active_ref ? 1 : 0;
+    }
+
+    sub _textfield_display_value($self, $node) {
+        if ($self->_textfield_is_active($node)) {
+            my $buffer_ref = $self->_textfield_buffer_ref($node);
+            return defined($$buffer_ref) ? "$$buffer_ref" : '';
+        }
+
+        my $value_ref = $self->_textfield_value_ref($node);
+        return defined($$value_ref) ? "$$value_ref" : '';
+    }
+
+    sub _textfield_begin_edit($self, $node) {
+        my $active_ref = $self->_textfield_active_ref($node);
+        my $buffer_ref = $self->_textfield_buffer_ref($node);
+        my $value_ref = $self->_textfield_value_ref($node);
+        $$buffer_ref = defined($$value_ref) ? "$$value_ref" : '';
+        $$active_ref = 1;
+        return 1;
+    }
+
+    sub _textfield_commit($self, $node) {
+        my $active_ref = $self->_textfield_active_ref($node);
+        my $buffer_ref = $self->_textfield_buffer_ref($node);
+        my $value_ref = $self->_textfield_value_ref($node);
+        $$value_ref = defined($$buffer_ref) ? "$$buffer_ref" : '';
+        $$active_ref = 0;
+
+        my $change_cb = $node->{props}{on_change};
+        if (defined $change_cb) {
+            confess "TextField -on_change must be a coderef"
+                unless ref($change_cb) eq 'CODE';
+            $change_cb->($self, $node, $$value_ref);
+        }
+
+        my $submit_cb = $node->{props}{on_submit};
+        if (defined $submit_cb) {
+            confess "TextField -on_submit must be a coderef"
+                unless ref($submit_cb) eq 'CODE';
+            $submit_cb->($self, $node, $$value_ref);
+        }
+
+        return 1;
+    }
+
+    sub _textfield_cancel($self, $node) {
+        my $active_ref = $self->_textfield_active_ref($node);
+        my $buffer_ref = $self->_textfield_buffer_ref($node);
+        my $value_ref = $self->_textfield_value_ref($node);
+        $$buffer_ref = defined($$value_ref) ? "$$value_ref" : '';
+        $$active_ref = 0;
+
+        my $cancel_cb = $node->{props}{on_cancel};
+        if (defined $cancel_cb) {
+            confess "TextField -on_cancel must be a coderef"
+                unless ref($cancel_cb) eq 'CODE';
+            $cancel_cb->($self, $node, $$value_ref);
+        }
+
+        return 1;
+    }
+
+    sub _textfield_text($self, $renderer, $node, $parent_w = undef) {
+        my $text = $self->_textfield_display_value($node);
+        my $width = $self->_textfield_inner_width($renderer, $node, $parent_w);
+        my $cursor_pos = length($text);
+        $cursor_pos = $width - 1 if $cursor_pos >= $width;
+        my $show_cursor = TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0)
+            && $self->_textfield_is_active($node);
+
+        my $visible = substr($text, 0, $width);
+        $visible .= ' ' x ($width - length($visible)) if length($visible) < $width;
+
+        if ($show_cursor) {
+            substr($visible, $cursor_pos, 1, '_');
+        }
+
+        return '[' . $visible . ']';
+    }
+
+    sub _list_items($self, $renderer, $node) {
+        my $items_ref = $self->_arrayref_prop($node, 'items_ref', 'List');
+        my @items = map {
+            if (!ref($_)) {
+                +{ label => "$_", value => "$_" };
+            } elsif (ref($_) eq 'HASH') {
+                confess "List item hash requires label"
+                    unless exists $_->{label};
+                +{
+                    label => "$_->{label}",
+                    value => exists($_->{value}) ? $_->{value} : "$_->{label}",
+                };
+            } else {
+                confess "List items must be scalars or hashrefs";
+            }
+        } @$items_ref;
+        return \@items;
+    }
+
+    sub _list_selected_index_ref($self, $node) {
+        return $self->_scalarref_prop($node, 'selected_index_ref', 'List');
+    }
+
+    sub _list_window_height($self, $renderer, $node, $parent_h = undef) {
+        my $props = $node->{props};
+        my $height = exists($props->{height})
+            ? $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height')
+            : 1;
+        $height = 1 if !defined($height) || $height < 1;
+        return $height;
+    }
+
+    sub _list_width($self, $renderer, $node, $parent_w = undef) {
+        my $items = $self->_list_items($renderer, $node);
+        my $natural = 0;
+        for my $item (@$items) {
+            my $w = 2 + length($item->{label});
+            $natural = $w if $w > $natural;
+        }
+        $natural = 2 if $natural < 2;
+
+        my $props = $node->{props};
+        my $width = exists($props->{width})
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width')
+            : $natural;
+        $width = 2 if !defined($width) || $width < 2;
+        return $width;
+    }
+
+    sub _list_normalize_selection($self, $renderer, $node) {
+        my $items = $self->_list_items($renderer, $node);
+        my $selected_ref = $self->_list_selected_index_ref($node);
+        my $count = scalar @$items;
+        $$selected_ref = 0 unless defined $$selected_ref;
+        $$selected_ref = 0 if $$selected_ref < 0;
+        $$selected_ref = $count - 1 if $count > 0 && $$selected_ref > $count - 1;
+        $$selected_ref = 0 if $count == 0;
+        return ($items, $selected_ref);
+    }
+
+    sub _list_scroll_ref($self, $node) {
+        my $scroll_ref = $node->{props}{scroll_ref};
+        if (!defined $scroll_ref) {
+            my $state_key = '_list_scroll_ref';
+            $node->{props}{$state_key} = \($node->{props}{_list_scroll_value} //= 0)
+                unless exists $node->{props}{$state_key};
+            $scroll_ref = $node->{props}{$state_key};
+        }
+        confess "List -scroll_ref must be a scalar ref"
+            unless ref($scroll_ref) eq 'SCALAR';
+        return $scroll_ref;
+    }
+
+    sub _list_visible_rows($self, $renderer, $node, $parent_w = undef, $parent_h = undef) {
+        my ($items, $selected_ref) = $self->_list_normalize_selection($renderer, $node);
+        my $scroll_ref = $self->_list_scroll_ref($node);
+        my $height = $self->_list_window_height($renderer, $node, $parent_h);
+        my $width = $self->_list_width($renderer, $node, $parent_w);
+        my $count = scalar @$items;
+
+        $$scroll_ref = 0 unless defined $$scroll_ref;
+        $$scroll_ref = 0 if $$scroll_ref < 0;
+        $$scroll_ref = $$selected_ref if $$selected_ref < $$scroll_ref;
+        $$scroll_ref = $$selected_ref - $height + 1 if $$selected_ref >= $$scroll_ref + $height;
+        my $max_scroll = $count > $height ? $count - $height : 0;
+        $$scroll_ref = $max_scroll if $$scroll_ref > $max_scroll;
+
+        my @rows;
+        for my $row_idx (0 .. $height - 1) {
+            my $item_idx = $$scroll_ref + $row_idx;
+            my $text = ' ' x $width;
+            my $selected = 0;
+            if ($item_idx < $count) {
+                my $label = $items->[$item_idx]{label};
+                my $prefix = $item_idx == $$selected_ref ? '> ' : '  ';
+                $selected = $item_idx == $$selected_ref ? 1 : 0;
+                my $line = $prefix . $label;
+                $line = substr($line, 0, $width);
+                $line .= ' ' x ($width - length($line)) if length($line) < $width;
+                $text = $line;
+            }
+            push @rows, {
+                text => $text,
+                selected => $selected,
+                item_idx => $item_idx,
+            };
+        }
+
+        return (\@rows, $width, $height);
+    }
+
+    sub _viewport_lines($self, $renderer, $node, $parent_w = undef) {
+        my $props = $node->{props};
+        if (exists $props->{lines_ref}) {
+            my $lines_ref = $self->_arrayref_prop($node, 'lines_ref', 'TextViewport');
+            return [ map { defined($_) ? "$_" : '' } @$lines_ref ];
+        }
+        my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
+        return [ split /\n/, "$text", -1 ];
+    }
+
+    sub _viewport_scroll_ref($self, $node) {
+        my $scroll_ref = $node->{props}{scroll_ref};
+        if (!defined $scroll_ref) {
+            my $state_key = '_viewport_scroll_ref';
+            $node->{props}{$state_key} = \($node->{props}{_viewport_scroll_value} //= 0)
+                unless exists $node->{props}{$state_key};
+            $scroll_ref = $node->{props}{$state_key};
+        }
+        confess "TextViewport -scroll_ref must be a scalar ref"
+            unless ref($scroll_ref) eq 'SCALAR';
+        return $scroll_ref;
+    }
+
+    sub _viewport_width($self, $renderer, $node, $parent_w = undef) {
+        my $lines = $self->_viewport_lines($renderer, $node, $parent_w);
+        my $natural = 1;
+        for my $line (@$lines) {
+            my $w = length($line);
+            $natural = $w if $w > $natural;
+        }
+        my $props = $node->{props};
+        my $width = exists($props->{width})
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width')
+            : $natural;
+        $width = 1 if !defined($width) || $width < 1;
+        return $width;
+    }
+
+    sub _viewport_height($self, $renderer, $node, $parent_h = undef) {
+        my $props = $node->{props};
+        my $height = exists($props->{height})
+            ? $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height')
+            : 1;
+        $height = 1 if !defined($height) || $height < 1;
+        return $height;
+    }
+
+    sub _viewport_visible_lines($self, $renderer, $node, $parent_w = undef, $parent_h = undef) {
+        my $lines = $self->_viewport_lines($renderer, $node, $parent_w);
+        my $scroll_ref = $self->_viewport_scroll_ref($node);
+        my $width = $self->_viewport_width($renderer, $node, $parent_w);
+        my $height = $self->_viewport_height($renderer, $node, $parent_h);
+        my $count = scalar @$lines;
+
+        $$scroll_ref = 0 unless defined $$scroll_ref;
+        $$scroll_ref = 0 if $$scroll_ref < 0;
+        my $max_scroll = $count > $height ? $count - $height : 0;
+        $$scroll_ref = $max_scroll if $$scroll_ref > $max_scroll;
+
+        my @visible;
+        for my $idx (0 .. $height - 1) {
+            my $line_idx = $$scroll_ref + $idx;
+            my $line = $line_idx < $count ? $lines->[$line_idx] : '';
+            $line = substr($line, 0, $width);
+            $line .= ' ' x ($width - length($line)) if length($line) < $width;
+            push @visible, $line;
+        }
+
+        return (\@visible, $width, $height);
+    }
+
+    sub _fieldlist_specs($self, $node) {
+        return $self->_arrayref_prop($node, 'fields', 'FieldList');
+    }
+
+    sub _fieldlist_selected_index_ref($self, $node) {
+        my $selected_ref = $node->{props}{selected_index_ref};
+        if (!defined $selected_ref) {
+            my $state_key = '_fieldlist_selected_index_ref';
+            $node->{props}{$state_key} = \($node->{props}{_fieldlist_selected_index_value} //= 0)
+                unless exists $node->{props}{$state_key};
+            $selected_ref = $node->{props}{$state_key};
+        }
+        confess "FieldList -selected_index_ref must be a scalar ref"
+            unless ref($selected_ref) eq 'SCALAR';
+        return $selected_ref;
+    }
+
+    sub _fieldlist_active_ref($self, $node) {
+        my $state_key = '_fieldlist_active_ref';
+        $node->{props}{$state_key} = \($node->{props}{_fieldlist_active_value} //= 0)
+            unless exists $node->{props}{$state_key};
+        my $active_ref = $node->{props}{$state_key};
+        confess "FieldList internal active state must be a scalar ref"
+            unless ref($active_ref) eq 'SCALAR';
+        return $active_ref;
+    }
+
+    sub _fieldlist_buffer_ref($self, $node) {
+        my $state_key = '_fieldlist_buffer_ref';
+        $node->{props}{$state_key} = \($node->{props}{_fieldlist_buffer_value} //= '')
+            unless exists $node->{props}{$state_key};
+        my $buffer_ref = $node->{props}{$state_key};
+        confess "FieldList internal buffer state must be a scalar ref"
+            unless ref($buffer_ref) eq 'SCALAR';
+        return $buffer_ref;
+    }
+
+    sub _fieldlist_is_active($self, $node) {
+        my $active_ref = $self->_fieldlist_active_ref($node);
+        return $$active_ref ? 1 : 0;
+    }
+
+    sub _fieldlist_normalize_selection($self, $node) {
+        my $fields = $self->_fieldlist_specs($node);
+        my $selected_ref = $self->_fieldlist_selected_index_ref($node);
+        my $count = scalar @$fields;
+        $$selected_ref = 0 unless defined $$selected_ref;
+        $$selected_ref = 0 if $$selected_ref < 0;
+        $$selected_ref = $count - 1 if $count > 0 && $$selected_ref > $count - 1;
+        $$selected_ref = 0 if $count == 0;
+        return ($fields, $selected_ref);
+    }
+
+    sub _fieldlist_selected_field($self, $node) {
+        my ($fields, $selected_ref) = $self->_fieldlist_normalize_selection($node);
+        return undef unless @$fields;
+        return $fields->[$$selected_ref];
+    }
+
+    sub _fieldlist_begin_edit($self, $node) {
+        my $field = $self->_fieldlist_selected_field($node);
+        return 0 unless defined $field;
+        return 0 unless ($field->{type} // 'text') eq 'text';
+
+        my $value_ref = $field->{value_ref};
+        confess "FieldList text field requires -value_ref scalar ref"
+            unless defined($value_ref) && ref($value_ref) eq 'SCALAR';
+
+        my $active_ref = $self->_fieldlist_active_ref($node);
+        my $buffer_ref = $self->_fieldlist_buffer_ref($node);
+        $$buffer_ref = defined($$value_ref) ? "$$value_ref" : '';
+        $$active_ref = 1;
+        return 1;
+    }
+
+    sub _fieldlist_commit($self, $node) {
+        my $field = $self->_fieldlist_selected_field($node);
+        return 0 unless defined $field;
+
+        my $active_ref = $self->_fieldlist_active_ref($node);
+        my $buffer_ref = $self->_fieldlist_buffer_ref($node);
+        my $value_ref = $field->{value_ref};
+        confess "FieldList text field requires -value_ref scalar ref"
+            unless defined($value_ref) && ref($value_ref) eq 'SCALAR';
+
+        $$value_ref = defined($$buffer_ref) ? "$$buffer_ref" : '';
+        $$active_ref = 0;
+        return 1;
+    }
+
+    sub _fieldlist_cancel($self, $node) {
+        my $field = $self->_fieldlist_selected_field($node);
+        return 0 unless defined $field;
+
+        my $active_ref = $self->_fieldlist_active_ref($node);
+        my $buffer_ref = $self->_fieldlist_buffer_ref($node);
+        my $value_ref = $field->{value_ref};
+        confess "FieldList text field requires -value_ref scalar ref"
+            unless defined($value_ref) && ref($value_ref) eq 'SCALAR';
+
+        $$buffer_ref = defined($$value_ref) ? "$$value_ref" : '';
+        $$active_ref = 0;
+        return 1;
+    }
+
+    sub _fieldlist_toggle_selected($self, $node) {
+        my $field = $self->_fieldlist_selected_field($node);
+        return 0 unless defined $field;
+        return 0 unless ($field->{type} // 'text') eq 'toggle';
+
+        my $value_ref = $field->{value_ref};
+        confess "FieldList toggle field requires -value_ref scalar ref"
+            unless defined($value_ref) && ref($value_ref) eq 'SCALAR';
+        $$value_ref = $$value_ref ? 0 : 1;
+        return 1;
+    }
+
+    sub _fieldlist_row_specs($self, $renderer, $node, $parent_w = undef, $parent_h = undef) {
+        my ($fields, $selected_ref) = $self->_fieldlist_normalize_selection($node);
+        my $focused = TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0);
+        my $active = $self->_fieldlist_is_active($node);
+        my $buffer_ref = $self->_fieldlist_buffer_ref($node);
+        my $label_w = 0;
+        for my $field (@$fields) {
+            confess "FieldList field specs must be hashrefs"
+                unless ref($field) eq 'HASH';
+            confess "FieldList field spec requires label"
+                unless exists $field->{label};
+            my $w = length("$field->{label}");
+            $label_w = $w if $w > $label_w;
+        }
+
+        my @rows;
+        my $body_w = 0;
+        for my $idx (0 .. $#$fields) {
+            my $field = $fields->[$idx];
+            my $type = $field->{type} // 'text';
+            my $value_ref = $field->{value_ref};
+            my $editor;
+            my $selected = $idx == $$selected_ref ? 1 : 0;
+
+            if ($type eq 'text') {
+                confess "FieldList text field requires -value_ref scalar ref"
+                    unless defined($value_ref) && ref($value_ref) eq 'SCALAR';
+                my $editor_w = defined($field->{width}) ? int($field->{width}) : 12;
+                $editor_w = 1 if $editor_w < 1;
+                my $value = $selected && $active
+                    ? (defined($$buffer_ref) ? "$$buffer_ref" : '')
+                    : (defined($$value_ref) ? "$$value_ref" : '');
+                my $visible = substr($value, 0, $editor_w);
+                $visible .= ' ' x ($editor_w - length($visible)) if length($visible) < $editor_w;
+                if ($selected && $active) {
+                    my $cursor_pos = length($value);
+                    $cursor_pos = $editor_w - 1 if $cursor_pos >= $editor_w;
+                    substr($visible, $cursor_pos, 1, '_');
+                }
+                $editor = '[' . $visible . ']';
+            } elsif ($type eq 'toggle') {
+                confess "FieldList toggle field requires -value_ref scalar ref"
+                    unless defined($value_ref) && ref($value_ref) eq 'SCALAR';
+                my $mark = $$value_ref ? 'x' : ' ';
+                $editor = '[' . $mark . ']';
+            } else {
+                confess "FieldList field type must be text or toggle";
+            }
+
+            my $label = "$field->{label}";
+            my $prefix = $selected ? '> ' : '  ';
+            $prefix = '* ' if $selected && $focused && $active;
+            my $line = sprintf("%s%-*s : %s", $prefix, $label_w, $label, $editor);
+            $body_w = length($line) if length($line) > $body_w;
+            push @rows, {
+                text => $line,
+                selected => $selected,
+                active => ($selected && $active) ? 1 : 0,
+            };
+        }
+
+        my $props = $node->{props};
+        my $width = exists($props->{width})
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width')
+            : $body_w;
+        $width = $body_w if !defined($width) || $width < $body_w;
+
+        my $height = exists($props->{height})
+            ? $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height')
+            : scalar(@rows);
+        $height = scalar(@rows) if !defined($height) || $height < scalar(@rows);
+
+        for my $row (@rows) {
+            my $line = substr($row->{text}, 0, $width);
+            $line .= ' ' x ($width - length($line)) if length($line) < $width;
+            $row->{text} = $line;
+        }
+
+        return (\@rows, $width, $height);
+    }
+
+    sub _widget_material($self, $renderer, $node) {
+        my $focused = TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0);
+        my $disabled = $self->_is_disabled_node($node);
+        my $props = $node->{props};
+        return TML::_resolve($self, $renderer, $node, $props->{disabled_material})
+            if $disabled && exists $props->{disabled_material};
+        return TML::_resolve($self, $renderer, $node, $props->{active_material})
+            if ($node->{type} // '') eq 'TextField' && $self->_textfield_is_active($node) && exists $props->{active_material};
+        return TML::_resolve($self, $renderer, $node, $props->{focused_material})
+            if $focused && exists $props->{focused_material};
+        return TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+    }
+
+    sub _widget_focus_overlay($self, $node, $ctx) {
+        return 0 unless defined $ctx && defined $ctx->{focused};
+        return $self->_interactive_node_id($ctx->{focused}) == $self->_interactive_node_id($node) ? 1 : 0;
+    }
+
+    sub _dispatch_button($self, $node) {
+        my $cb = $node->{props}{on_press};
+        if (defined $cb) {
+            confess "Button -on_press must be a coderef"
+                unless ref($cb) eq 'CODE';
+            $cb->($self, $node);
+        }
+        return 1;
+    }
+
+    sub _dispatch_toggle($self, $node) {
+        my $value_ref = $self->_toggle_value_ref($node);
+        $$value_ref = $$value_ref ? 0 : 1;
+        my $cb = $node->{props}{on_change};
+        if (defined $cb) {
+            confess "Toggle -on_change must be a coderef"
+                unless ref($cb) eq 'CODE';
+            $cb->($self, $node, $$value_ref);
+        }
+        return 1;
+    }
+
+    sub _dispatch_textfield($self, $event, $node) {
+        my $char = $event->payload->char;
+        my $active = $self->_textfield_is_active($node);
+
+        if (!$active) {
+            return $self->_textfield_begin_edit($node) if $char eq "\n";
+            return 1 if $char eq "\e";
+            return 0;
+        }
+
+        my $buffer_ref = $self->_textfield_buffer_ref($node);
+        $$buffer_ref = '' unless defined $$buffer_ref;
+
+        if ($char eq "\n") {
+            return $self->_textfield_commit($node);
+        }
+        if ($char eq "\e") {
+            return $self->_textfield_cancel($node);
+        }
+        if ($char eq "\x7f" || $char eq "\b") {
+            substr($$buffer_ref, -1, 1, '') if length($$buffer_ref);
+        } else {
+            my $max_len = $node->{props}{max_length};
+            if (defined $max_len) {
+                confess "TextField -max_length must be numeric"
+                    unless !ref($max_len) && $max_len =~ /^\d+$/;
+                return 1 if length($$buffer_ref) >= int($max_len);
+            }
+            $$buffer_ref .= $char;
+        }
+
+        return 1;
+    }
+
+    sub _dispatch_fieldlist($self, $event, $focused) {
+        my ($fields, $selected_ref) = $self->_fieldlist_normalize_selection($focused);
+        my $char = $event->payload->char;
+        my $active = $self->_fieldlist_is_active($focused);
+
+        if ($active) {
+            my $field = $self->_fieldlist_selected_field($focused);
+            return 0 unless defined $field;
+
+            if ($char eq "\n") {
+                return $self->_fieldlist_commit($focused);
+            }
+            if ($char eq "\e") {
+                return $self->_fieldlist_cancel($focused);
+            }
+            if (($field->{type} // 'text') eq 'text') {
+                my $buffer_ref = $self->_fieldlist_buffer_ref($focused);
+                $$buffer_ref = '' unless defined $$buffer_ref;
+                if ($char eq "\x7f" || $char eq "\b") {
+                    substr($$buffer_ref, -1, 1, '') if length($$buffer_ref);
+                    return 1;
+                }
+                my $max_len = $field->{width};
+                if (defined $max_len) {
+                    confess "FieldList text field width must be numeric"
+                        unless !ref($max_len) && $max_len =~ /^\d+$/;
+                    return 1 if length($$buffer_ref) >= int($max_len);
+                }
+                $$buffer_ref .= $char;
+                return 1;
+            }
+        }
+
+        if ($char eq 'j') {
+            $$selected_ref++ if $$selected_ref < $#$fields;
+            return 1;
+        }
+        if ($char eq 'k') {
+            $$selected_ref-- if $$selected_ref > 0;
+            return 1;
+        }
+        if ($char eq "\n") {
+            my $field = $self->_fieldlist_selected_field($focused);
+            return 0 unless defined $field;
+            return $self->_fieldlist_begin_edit($focused)
+                if ($field->{type} // 'text') eq 'text';
+            return $self->_fieldlist_toggle_selected($focused)
+                if ($field->{type} // 'text') eq 'toggle';
+        }
+        if ($char eq ' ') {
+            my $field = $self->_fieldlist_selected_field($focused);
+            return 0 unless defined $field;
+            return $self->_fieldlist_toggle_selected($focused)
+                if ($field->{type} // 'text') eq 'toggle';
+            return 0;
+        }
+        if ($char eq "\e") {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    sub _dispatch_interactive_event($self, $event) {
+        return 0 unless $event->type eq Event::Type::KEY_PRESS;
+
+        my $ctx = $self->_interactive_context();
+        return 0 unless defined $ctx;
+
+        my $focused = $ctx->{focused};
+        return 0 unless defined $focused;
+        my $char = $event->payload->char;
+
+        my $type = $focused->{type} // '';
+        if ($type eq 'List') {
+            my ($items, $selected_ref) = $self->_list_normalize_selection(undef, $focused);
+            my $char = $event->payload->char;
+            if ($char eq 'j') {
+                $$selected_ref++ if $$selected_ref < $#$items;
+                return 1;
+            }
+            if ($char eq 'k') {
+                $$selected_ref-- if $$selected_ref > 0;
+                return 1;
+            }
+            if ($char eq "\n" || $char eq ' ') {
+                my $cb = $focused->{props}{on_activate};
+                if (defined $cb) {
+                    confess "List -on_activate must be a coderef"
+                        unless ref($cb) eq 'CODE';
+                    my $items_now = $self->_list_items(undef, $focused);
+                    my $item = @$items_now ? $items_now->[$$selected_ref] : undef;
+                    $cb->($self, $focused, $$selected_ref, $item);
+                }
+                return 1;
+            }
+        }
+        if ($type eq 'TextViewport') {
+            my $scroll_ref = $self->_viewport_scroll_ref($focused);
+            my $lines = $self->_viewport_lines(undef, $focused);
+            my $height = $self->_viewport_height(undef, $focused, undef);
+            my $max_scroll = @$lines > $height ? @$lines - $height : 0;
+            my $char = $event->payload->char;
+            if ($char eq 'j') {
+                $$scroll_ref++ if $$scroll_ref < $max_scroll;
+                return 1;
+            }
+            if ($char eq 'k') {
+                $$scroll_ref-- if $$scroll_ref > 0;
+                return 1;
+            }
+            if ($char eq 'f') {
+                $$scroll_ref += $height;
+                $$scroll_ref = $max_scroll if $$scroll_ref > $max_scroll;
+                return 1;
+            }
+            if ($char eq 'b') {
+                $$scroll_ref -= $height;
+                $$scroll_ref = 0 if $$scroll_ref < 0;
+                return 1;
+            }
+        }
+        if ($type eq 'Button') {
+            return $self->_dispatch_button($focused)
+                if $char eq "\n" || $char eq ' ';
+        }
+        if ($type eq 'Toggle') {
+            return $self->_dispatch_toggle($focused)
+                if $char eq "\n" || $char eq ' ';
+        }
+        if ($type eq 'TextField') {
+            my $handled = $self->_dispatch_textfield($event, $focused);
+            return $handled if $handled;
+        }
+        if ($type eq 'FieldList') {
+            my $handled = $self->_dispatch_fieldlist($event, $focused);
+            return $handled if $handled;
+        }
+        return $self->_dispatch_navigation_action($ctx, $focused, $char);
+    }
 
     sub _cache_node_id($self, $node) {
         return 0 unless defined($node) && ref($node);
@@ -487,7 +1634,8 @@ package TML::Runtime::App {
         return $cached->@* if defined $cached;
 
         my $props = $node->{props};
-        my $gap = TML::_resolve_int($self, $renderer, $node, $props->{gap}, 0);
+        my $default_gap = ($node->{type} // '') eq 'ButtonRow' ? 1 : 0;
+        my $gap = TML::_resolve_int($self, $renderer, $node, $props->{gap}, $default_gap);
         $gap = 0 if $gap < 0;
 
         my $box_w = exists $props->{width}
@@ -675,9 +1823,55 @@ package TML::Runtime::App {
             return $result->@*;
         }
 
-        if ($type eq 'VBox' || $type eq 'HBox') {
+        if ($type eq 'Button') {
+            my $text = $self->_button_text($renderer, $node);
+            my $w = length($text);
+            my $result = [$w + $margin_left + $margin_right, 1 + $margin_top + $margin_bottom];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
+        }
+
+        if ($type eq 'Toggle') {
+            my $text = $self->_toggle_text($renderer, $node);
+            my $w = length($text);
+            my $result = [$w + $margin_left + $margin_right, 1 + $margin_top + $margin_bottom];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
+        }
+
+        if ($type eq 'TextField') {
+            my $text = $self->_textfield_text($renderer, $node, $inner_parent_w);
+            my $w = length($text);
+            my $result = [$w + $margin_left + $margin_right, 1 + $margin_top + $margin_bottom];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
+        }
+
+        if ($type eq 'List') {
+            my ($rows, $w, $h) = $self->_list_visible_rows($renderer, $node, $inner_parent_w, $inner_parent_h);
+            my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
+        }
+
+        if ($type eq 'TextViewport') {
+            my ($visible, $w, $h) = $self->_viewport_visible_lines($renderer, $node, $inner_parent_w, $inner_parent_h);
+            my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
+        }
+
+        if ($type eq 'FieldList') {
+            my ($rows, $w, $h) = $self->_fieldlist_row_specs($renderer, $node, $inner_parent_w, $inner_parent_h);
+            my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
+        }
+
+        if ($type eq 'VBox' || $type eq 'HBox' || $type eq 'ButtonRow') {
+            local $node->{props}{gap} = 1 if $type eq 'ButtonRow' && !exists $node->{props}{gap};
             my ($placements, $w, $h) = $self->_container_layout(
-                $renderer, $node, $type, $inner_parent_w, $inner_parent_h
+                $renderer, $node, $type eq 'ButtonRow' ? 'HBox' : $type, $inner_parent_w, $inner_parent_h
             );
             my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
             $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
@@ -777,9 +1971,69 @@ package TML::Runtime::App {
                 my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
                 $renderer->render_text($line_pos, $lines->[$row], %opts);
             }
-        } elsif ($node->{type} eq 'VBox' || $node->{type} eq 'HBox') {
+        } elsif ($node->{type} eq 'Button') {
+            my $ctx = $self->_interactive_context();
+            local $node->{props}{focused} = $self->_widget_focus_overlay($node, $ctx);
+            my $text = $self->_button_text($renderer, $node);
+            my $material = $self->_widget_material($renderer, $node);
+            $renderer->render_text($content_local, $text, -material => $material);
+        } elsif ($node->{type} eq 'Toggle') {
+            my $ctx = $self->_interactive_context();
+            local $node->{props}{focused} = $self->_widget_focus_overlay($node, $ctx);
+            my $text = $self->_toggle_text($renderer, $node);
+            my $material = $self->_widget_material($renderer, $node);
+            $renderer->render_text($content_local, $text, -material => $material);
+        } elsif ($node->{type} eq 'TextField') {
+            my $ctx = $self->_interactive_context();
+            local $node->{props}{focused} = $self->_widget_focus_overlay($node, $ctx);
+            my $text = $self->_textfield_text($renderer, $node, $inner_parent_w);
+            my $material = $self->_widget_material($renderer, $node);
+            $renderer->render_text($content_local, $text, -material => $material);
+        } elsif ($node->{type} eq 'List') {
+            my $ctx = $self->_interactive_context();
+            my $focused = $self->_widget_focus_overlay($node, $ctx);
+            my ($rows, $w, $h) = $self->_list_visible_rows($renderer, $node, $inner_parent_w, $inner_parent_h);
+            my $base_material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+            my $selected_material = TML::_resolve($self, $renderer, $node,
+                $focused
+                ? ($props->{focused_material} // $props->{selected_material} // $base_material)
+                : ($props->{selected_material} // $base_material)
+            );
+            for my $row (0 .. $#$rows) {
+                my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
+                my $material = $rows->[$row]{selected} ? $selected_material : $base_material;
+                $renderer->render_text($line_pos, $rows->[$row]{text}, -material => $material);
+            }
+        } elsif ($node->{type} eq 'TextViewport') {
+            my $ctx = $self->_interactive_context();
+            local $node->{props}{focused} = $self->_widget_focus_overlay($node, $ctx);
+            my ($visible, $w, $h) = $self->_viewport_visible_lines($renderer, $node, $inner_parent_w, $inner_parent_h);
+            my $material = $self->_widget_material($renderer, $node);
+            for my $row (0 .. $#$visible) {
+                my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
+                $renderer->render_text($line_pos, $visible->[$row], -material => $material);
+            }
+        } elsif ($node->{type} eq 'FieldList') {
+            my $ctx = $self->_interactive_context();
+            local $node->{props}{focused} = $self->_widget_focus_overlay($node, $ctx);
+            my ($rows, $w, $h) = $self->_fieldlist_row_specs($renderer, $node, $inner_parent_w, $inner_parent_h);
+            my $base_material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+            my $focused_material = TML::_resolve($self, $renderer, $node, $props->{focused_material} // $base_material);
+            my $active_material = TML::_resolve($self, $renderer, $node, $props->{active_material} // $focused_material);
+            for my $row (0 .. $#$rows) {
+                my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
+                my $material = $rows->[$row]{active}
+                    ? $active_material
+                    : $rows->[$row]{selected}
+                    ? $focused_material
+                    : $base_material;
+                $renderer->render_text($line_pos, $rows->[$row]{text}, -material => $material);
+            }
+        } elsif ($node->{type} eq 'VBox' || $node->{type} eq 'HBox' || $node->{type} eq 'ButtonRow') {
+            my $container_type = $node->{type} eq 'ButtonRow' ? 'HBox' : $node->{type};
+            local $node->{props}{gap} = 1 if $node->{type} eq 'ButtonRow' && !exists $node->{props}{gap};
             my ($placements, $w, $h) = $self->_container_layout(
-                $renderer, $node, $node->{type}, $inner_parent_w, $inner_parent_h
+                $renderer, $node, $container_type, $inner_parent_w, $inner_parent_h
             );
             for my $placement (@$placements) {
                 my $child_pos = $content_local + Matrix3::Vec::from_xy($placement->{x}, -$placement->{y});
@@ -788,6 +2042,11 @@ package TML::Runtime::App {
             return;
         } elsif ($node->{type} eq 'BBox') {
             $self->_render_bbox($renderer, $node, $content_local, $inner_parent_w, $inner_parent_h);
+            return;
+        } elsif ($node->{type} eq 'InputRoot' || $node->{type} eq 'FocusScope') {
+            for my $child ($node->{children}->@*) {
+                $self->_render_node($renderer, $child, $content_local, $inner_parent_w, $inner_parent_h);
+            }
             return;
         }
 
@@ -816,6 +2075,8 @@ package TML::Runtime::App {
 
         for my $event (@events) {
             next unless $event->type eq Event::Type::KEY_PRESS;
+            my $handled = $self->_dispatch_interactive_event($event);
+            next if $handled;
             my $ch = $event->payload->char;
             for my $handler ($self->{on_key}->@*) {
                 my ($want, $cb) = $handler->@*;
@@ -918,7 +2179,7 @@ arrayref.
 
 All functions are exported on demand via C<@EXPORT_OK>:
 
-    App Layer VBox HBox BBox Rect Text OnKey OnUpdate
+    App Layer VBox HBox BBox Rect Text InputRoot FocusScope Button Toggle TextField List FieldList TextViewport ButtonRow OnKey OnUpdate
 
 =head1 APP
 
