@@ -125,6 +125,13 @@ package GameLoop {
         $self->{anyevent_watchers} = [$io_w, $timer_w];
         $cv->recv;
     }
+
+    sub shutdown($self) {
+        $self->{anyevent_watchers} = [];
+        $self->{input}->restore_mode if defined $self->{input};
+        $self->{term}->restore_text_mode if defined $self->{term};
+        return;
+    }
 }
 
 1;

@@ -90,6 +90,14 @@ sub initscr($self, $default_value = ' ') {
     print join "\n", map { $default_value x ($self->cols - 1) } 0 .. $self->rows - 1;
 }
 
+sub restore_text_mode($self) {
+    return if $ENV{SUPPRESS_TERMLIB};
+    local $| = 1;
+    print "\e[0m\e[?25h";
+    print $self->term->Tgoto("cm", 0, $self->rows - 1);
+    print "\n";
+}
+
 sub _rbg($prefix, $color) {
     sprintf "%sr%dg%db%d",
         $prefix,
@@ -158,5 +166,10 @@ Writes at the given Matrix3::Vec.
 =item initscr($default_value)
 
 Clears and fills the screen with the given character.
+
+=item restore_text_mode
+
+Restores a plain text cursor state before returning to normal stdout/stderr
+output.
 
 =back

@@ -499,6 +499,42 @@ subtest 'TextViewport scrolls locally without leaving focus domain' => sub {
     is_deeply(world_cell($renderer, 0, -1), [ord('c'), 10, -1, 1], 'viewport renders following visible line');
 };
 
+subtest 'TextViewport yields j navigation when already at scroll boundary' => sub {
+    my $scroll = 0;
+    my @lines = ('alpha', 'bravo');
+    my $result = 'pending';
+
+    my $app = App {
+        InputRoot {
+            FocusScope {
+                VBox {
+                    TextViewport {}
+                        -lines_ref => \@lines,
+                        -scroll_ref => \$scroll,
+                        -width => 7,
+                        -height => 2,
+                        -focused_material => 'FOCUS',
+                        -margin => 0;
+                    Button {} -label => 'Run', -focused_material => 'FOCUS', -on_press => sub ($app, $node) { $result = 'run' }, -margin => 0;
+                } -gap => 1, -margin => 0;
+            } -margin => 0;
+        } -margin => 0;
+    } -state => {};
+
+    ok($app->update(0.1, Event::key_press('j')), 'boundary j falls through to sibling navigation');
+
+    my $renderer = mk_renderer(10, 20);
+    $app->render($renderer);
+    is_deeply(
+        world_cell($renderer, 0, -3),
+        [ord('['), 10, -1, 1],
+        'button becomes focused when viewport cannot scroll further',
+    );
+
+    ok($app->update(0.1, Event::key_press(' ')), 'button receives activation after boundary navigation');
+    is($result, 'run', 'focused button callback fires after boundary navigation');
+};
+
 subtest 'FieldList supports local field navigation and editing' => sub {
     my $name = 'Ada';
     my $debug = 1;
@@ -634,6 +670,72 @@ subtest 'custom InputRoot keymap overrides default navigation bindings' => sub {
     ok($app->update(0.1, Event::key_press(' ')), 'overridden navigation still preserves activation dispatch');
     is($result, 'no', 'custom keymap replaced default local navigation');
     ok($app->update(0.1, Event::key_press('j')), 'unbound default key falls through without quitting');
+};
+
+subtest 'App lifecycle validates callbacks and runs setup once' => sub {
+    my @setup_calls;
+    my $app = App {
+        Text {} -text => 'lifecycle';
+    } -state => {},
+      -setup => sub ($app, $runtime) {
+          push @setup_calls, $runtime->{cols};
+          $app->state->{boot_cols} = $runtime->{cols};
+      };
+
+    my $runtime = $app->_run_setup_callback({ cols => 80, rows => 24 });
+    is($app->state->{boot_cols}, 80, 'setup callback can initialize app state from runtime info');
+    is_deeply(\@setup_calls, [80], 'setup callback executed once');
+    is($app->_run_setup_callback({ cols => 120, rows => 40 })->{cols}, 80, 'subsequent setup calls reuse the first runtime info');
+    is_deeply(\@setup_calls, [80], 'setup callback does not rerun');
+};
+
+subtest 'App action lifecycle reports progress and captures result streams' => sub {
+    my $app = App {
+        Text {} -text => 'action';
+    } -state => {},
+      -action => sub ($app, $report, $label) {
+          $report->({ message => 'boot', current => 1, total => 2 });
+          print "stdout:$label\n";
+          warn "stderr:$label\n";
+          $report->({ message => 'done', current => 2, total => 2 });
+          return { ok => 1, label => $label };
+      };
+
+    ok($app->start_action('deploy'), 'action worker starts');
+
+    while ($app->action_is_running) {
+        $app->_pump_action_runtime();
+        select undef, undef, undef, 0.01;
+    }
+
+    is($app->action_phase, 'completed', 'action finishes successfully');
+    is_deeply($app->action_result, { ok => 1, label => 'deploy' }, 'action result is returned to the app');
+    is($app->action_latest_progress->{message}, 'done', 'latest progress reflects the last report');
+    like($app->action_stdout, qr/stdout:deploy/, 'action stdout is captured');
+    like($app->action_stderr, qr/stderr:deploy/, 'action stderr is captured');
+};
+
+subtest 'App exit callback receives lifecycle result bundle' => sub {
+    my $exit_bundle;
+    my $app = App {
+        Text {} -text => 'exit';
+    } -state => { value => 7 },
+      -exit => sub ($app, $result) {
+          $exit_bundle = $result;
+          return 'finished';
+      };
+
+    $app->{lifecycle}{runtime_info} = { cols => 90, rows => 30 };
+    $app->{lifecycle}{action}{phase} = 'completed';
+    $app->{lifecycle}{action}{result} = { answer => 42 };
+    $app->{lifecycle}{action}{stdout} = "ok\n";
+    $app->{lifecycle}{action}{stderr} = '';
+    $app->{lifecycle}{action}{exit_code} = 0;
+
+    is($app->_run_exit_callback(), 'finished', 'exit callback return value is propagated');
+    is($exit_bundle->{runtime_info}{cols}, 90, 'exit callback receives runtime info');
+    is($exit_bundle->{action_result}{answer}, 42, 'exit callback receives action result');
+    is($exit_bundle->{state}{value}, 7, 'exit callback receives app state');
 };
 
 done_testing;

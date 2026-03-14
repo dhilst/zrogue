@@ -208,12 +208,28 @@ sub OnUpdate :prototype(&) {
 package TML::Runtime::App {
     use v5.36;
     use Carp;
+    use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
+    use POSIX qw(WNOHANG _exit);
     use Scalar::Util qw(refaddr);
+    use Storable qw(nfreeze thaw);
+    use Time::HiRes qw(time);
 
     sub _new($class, $opts) {
         my $state = $opts->{state} // {};
         confess "state must be a hashref"
             unless ref($state) eq 'HASH';
+
+        my $setup_cb = $opts->{setup};
+        confess "setup must be a coderef"
+            if defined($setup_cb) && ref($setup_cb) ne 'CODE';
+
+        my $action_cb = $opts->{action};
+        confess "action must be a coderef"
+            if defined($action_cb) && ref($action_cb) ne 'CODE';
+
+        my $exit_cb = $opts->{exit};
+        confess "exit must be a coderef"
+            if defined($exit_cb) && ref($exit_cb) ne 'CODE';
 
         return bless {
             root => undef,
@@ -231,10 +247,321 @@ package TML::Runtime::App {
                 focused_node_id => undef,
                 active_root_id => undef,
             },
+            lifecycle => {
+                setup_cb => $setup_cb,
+                action_cb => $action_cb,
+                exit_cb => $exit_cb,
+                setup_done => 0,
+                exit_done => 0,
+                runtime_info => undef,
+                exit_result => undef,
+                action => {
+                    phase => 'idle',
+                    requested_args => [],
+                    started_at => undef,
+                    finished_at => undef,
+                    latest_progress => undef,
+                    progress_log => [],
+                    result => undef,
+                    stdout => '',
+                    stderr => '',
+                    exit_code => undef,
+                    pending_exit_code => undef,
+                    runtime => undef,
+                },
+            },
         }, $class;
     }
 
     sub state($self) { $self->{state} }
+
+    sub runtime_info($self) { $self->{lifecycle}{runtime_info} }
+
+    sub action_phase($self) { $self->{lifecycle}{action}{phase} }
+
+    sub action_is_running($self) { $self->action_phase eq 'running' ? 1 : 0 }
+
+    sub action_latest_progress($self) { $self->{lifecycle}{action}{latest_progress} }
+
+    sub action_progress_log($self) { $self->{lifecycle}{action}{progress_log} }
+
+    sub action_result($self) { $self->{lifecycle}{action}{result} }
+
+    sub action_stdout($self) { $self->{lifecycle}{action}{stdout} }
+
+    sub action_stderr($self) { $self->{lifecycle}{action}{stderr} }
+
+    sub action_exit_code($self) { $self->{lifecycle}{action}{exit_code} }
+
+    sub _run_setup_callback($self, $runtime_info) {
+        return $self->runtime_info if $self->{lifecycle}{setup_done};
+
+        $runtime_info //= {};
+        confess "runtime info must be a hashref"
+            unless ref($runtime_info) eq 'HASH';
+
+        $self->{lifecycle}{runtime_info} = $runtime_info;
+        my $setup_cb = $self->{lifecycle}{setup_cb};
+        $setup_cb->($self, $runtime_info) if defined $setup_cb;
+        $self->{lifecycle}{setup_done} = 1;
+        return $runtime_info;
+    }
+
+    sub _normalize_action_progress($self, $payload) {
+        return { message => '' } unless defined $payload;
+        return { message => "$payload" } unless ref($payload);
+        confess "action progress payload must be a hashref or scalar"
+            unless ref($payload) eq 'HASH';
+        return { $payload->%* };
+    }
+
+    sub _set_nonblocking($self, $fh) {
+        my $flags = fcntl($fh, F_GETFL, 0);
+        confess "failed to read filehandle flags"
+            unless defined $flags;
+        confess "failed to set nonblocking mode"
+            unless fcntl($fh, F_SETFL, $flags | O_NONBLOCK);
+        return;
+    }
+
+    sub _write_action_message($self, $fh, $message) {
+        my $payload = nfreeze($message);
+        my $frame = pack('N', length($payload)) . $payload;
+        my $offset = 0;
+        while ($offset < length($frame)) {
+            my $written = syswrite($fh, $frame, length($frame) - $offset, $offset);
+            confess "failed to write action message"
+                unless defined $written;
+            $offset += $written;
+        }
+        return;
+    }
+
+    sub _slurp_nonblocking($self, $fh) {
+        my $buffer = '';
+        while (1) {
+            my $read = sysread($fh, my $chunk, 4096);
+            last unless defined $read;
+            last if $read == 0;
+            $buffer .= $chunk;
+        }
+        return $buffer;
+    }
+
+    sub _drain_action_messages($self, $runtime) {
+        return [] unless defined $runtime;
+        my $chunk = $self->_slurp_nonblocking($runtime->{control_read});
+        $runtime->{control_buffer} .= $chunk if length $chunk;
+
+        my $messages = [];
+        while (length($runtime->{control_buffer}) >= 4) {
+            my $len = unpack('N', substr($runtime->{control_buffer}, 0, 4));
+            last if length($runtime->{control_buffer}) < 4 + $len;
+            my $payload = substr($runtime->{control_buffer}, 4, $len);
+            substr($runtime->{control_buffer}, 0, 4 + $len, '');
+            push @$messages, thaw($payload);
+        }
+
+        return $messages;
+    }
+
+    sub _apply_action_message($self, $message) {
+        return unless defined $message && ref($message) eq 'HASH';
+        my $action = $self->{lifecycle}{action};
+        my $type = $message->{type} // '';
+
+        if ($type eq 'progress') {
+            my $payload = $self->_normalize_action_progress($message->{payload});
+            $action->{latest_progress} = $payload;
+            push $action->{progress_log}->@*, $payload;
+            return;
+        }
+
+        if ($type eq 'result') {
+            $action->{result} = $message->{payload};
+            return;
+        }
+
+        if ($type eq 'complete') {
+            $action->{pending_exit_code} = $message->{exit_code};
+            return;
+        }
+
+        return;
+    }
+
+    sub _finalize_action_runtime($self, $exit_code) {
+        my $action = $self->{lifecycle}{action};
+        my $runtime = delete $action->{runtime};
+        return unless defined $runtime;
+
+        $action->{exit_code} = $exit_code;
+        $action->{finished_at} = time;
+        $action->{phase} = $exit_code == 0 ? 'completed' : 'failed';
+
+        if (!defined($action->{latest_progress}) && $action->{phase} eq 'completed') {
+            $action->{latest_progress} = { message => 'action completed' };
+        }
+
+        $self->quit;
+        return;
+    }
+
+    sub _pump_action_runtime($self) {
+        my $action = $self->{lifecycle}{action};
+        my $runtime = $action->{runtime};
+        return unless defined $runtime;
+
+        for my $message ($self->_drain_action_messages($runtime)->@*) {
+            $self->_apply_action_message($message);
+        }
+
+        $action->{stdout} .= $self->_slurp_nonblocking($runtime->{stdout_read});
+        $action->{stderr} .= $self->_slurp_nonblocking($runtime->{stderr_read});
+
+        my $pid = $runtime->{pid};
+        my $wait = waitpid($pid, WNOHANG);
+        return if $wait == 0 && !defined $action->{pending_exit_code};
+
+        my $exit_code = defined($action->{pending_exit_code})
+            ? $action->{pending_exit_code}
+            : ($wait > 0 ? ($? >> 8) : 255);
+        $self->_finalize_action_runtime($exit_code);
+        return;
+    }
+
+    sub start_action($self, @args) {
+        my $action_cb = $self->{lifecycle}{action_cb};
+        confess "start_action requires an -action callback"
+            unless defined $action_cb;
+        return 0 if $self->action_is_running;
+
+        pipe(my $control_read, my $control_write)
+            or confess "failed to create action control pipe";
+        pipe(my $stdout_read, my $stdout_write)
+            or confess "failed to create action stdout pipe";
+        pipe(my $stderr_read, my $stderr_write)
+            or confess "failed to create action stderr pipe";
+
+        my $pid = fork();
+        confess "failed to fork action worker"
+            unless defined $pid;
+
+        if ($pid == 0) {
+            close $control_read;
+            close $stdout_read;
+            close $stderr_read;
+
+            open(STDOUT, '>&', $stdout_write)
+                or confess "failed to redirect action stdout";
+            open(STDERR, '>&', $stderr_write)
+                or confess "failed to redirect action stderr";
+
+            my $report = sub ($payload) {
+                my $normalized = $self->_normalize_action_progress($payload);
+                $self->_write_action_message($control_write, {
+                    type => 'progress',
+                    payload => $normalized,
+                });
+                return;
+            };
+
+            my $result = $action_cb->($self, $report, @args);
+            $self->_write_action_message($control_write, {
+                type => 'result',
+                payload => $result,
+            });
+            $self->_write_action_message($control_write, {
+                type => 'complete',
+                exit_code => 0,
+            });
+            close $control_write;
+            close $stdout_write;
+            close $stderr_write;
+            _exit(0);
+        }
+
+        close $control_write;
+        close $stdout_write;
+        close $stderr_write;
+
+        $self->_set_nonblocking($control_read);
+        $self->_set_nonblocking($stdout_read);
+        $self->_set_nonblocking($stderr_read);
+
+        $self->{lifecycle}{action} = {
+            phase => 'running',
+            requested_args => [@args],
+            started_at => time,
+            finished_at => undef,
+            latest_progress => { message => 'action started' },
+            progress_log => [{ message => 'action started' }],
+            result => undef,
+            stdout => '',
+            stderr => '',
+            exit_code => undef,
+            pending_exit_code => undef,
+            runtime => {
+                pid => $pid,
+                control_read => $control_read,
+                stdout_read => $stdout_read,
+                stderr_read => $stderr_read,
+                control_buffer => '',
+            },
+        };
+
+        return 1;
+    }
+
+    sub _abort_running_action($self) {
+        my $runtime = $self->{lifecycle}{action}{runtime};
+        return unless defined $runtime;
+        kill 'TERM', $runtime->{pid};
+        waitpid($runtime->{pid}, 0);
+        $self->_finalize_action_runtime(143);
+        $self->{lifecycle}{action}{phase} = 'aborted';
+        return;
+    }
+
+    sub _run_exit_callback($self) {
+        return $self->{lifecycle}{exit_result} if $self->{lifecycle}{exit_done};
+
+        my $exit_cb = $self->{lifecycle}{exit_cb};
+        my $result = {
+            action_phase => $self->action_phase,
+            action_result => $self->action_result,
+            action_stdout => $self->action_stdout,
+            action_stderr => $self->action_stderr,
+            action_exit_code => $self->action_exit_code,
+            runtime_info => $self->runtime_info,
+            state => $self->state,
+        };
+
+        $self->{lifecycle}{exit_result} = defined($exit_cb)
+            ? $exit_cb->($self, $result)
+            : $result;
+        $self->{lifecycle}{exit_done} = 1;
+        return $self->{lifecycle}{exit_result};
+    }
+
+    sub run($self, $theme) {
+        confess "run requires a theme"
+            unless defined $theme;
+
+        require GameLoop;
+        my $loop = GameLoop::new($theme, $self);
+        my $runtime_info = {
+            theme => $theme,
+            cols => $loop->{term}->cols,
+            rows => $loop->{term}->rows,
+            frame_interval => $loop->{frame_interval},
+        };
+        $self->_run_setup_callback($runtime_info);
+        $loop->run();
+        $self->_abort_running_action if $self->action_is_running;
+        $loop->shutdown();
+        return $self->_run_exit_callback();
+    }
 
     sub _interactive_node_id($self, $node) {
         return $self->_cache_node_id($node);
@@ -1288,22 +1615,30 @@ package TML::Runtime::App {
             my $max_scroll = @$lines > $height ? @$lines - $height : 0;
             my $char = $event->payload->char;
             if ($char eq 'j') {
-                $$scroll_ref++ if $$scroll_ref < $max_scroll;
-                return 1;
+                if ($$scroll_ref < $max_scroll) {
+                    $$scroll_ref++;
+                    return 1;
+                }
             }
-            if ($char eq 'k') {
-                $$scroll_ref-- if $$scroll_ref > 0;
-                return 1;
+            elsif ($char eq 'k') {
+                if ($$scroll_ref > 0) {
+                    $$scroll_ref--;
+                    return 1;
+                }
             }
-            if ($char eq 'f') {
-                $$scroll_ref += $height;
-                $$scroll_ref = $max_scroll if $$scroll_ref > $max_scroll;
-                return 1;
+            elsif ($char eq 'f') {
+                if ($$scroll_ref < $max_scroll) {
+                    $$scroll_ref += $height;
+                    $$scroll_ref = $max_scroll if $$scroll_ref > $max_scroll;
+                    return 1;
+                }
             }
-            if ($char eq 'b') {
-                $$scroll_ref -= $height;
-                $$scroll_ref = 0 if $$scroll_ref < 0;
-                return 1;
+            elsif ($char eq 'b') {
+                if ($$scroll_ref > 0) {
+                    $$scroll_ref -= $height;
+                    $$scroll_ref = 0 if $$scroll_ref < 0;
+                    return 1;
+                }
             }
         }
         if ($type eq 'Button') {
@@ -2069,6 +2404,8 @@ package TML::Runtime::App {
     }
 
     sub update($self, $delta_time, @events) {
+        $self->_pump_action_runtime();
+
         for my $cb ($self->{on_update}->@*) {
             $cb->($self, $delta_time, @events);
         }
@@ -2114,21 +2451,34 @@ TML - Block-based Perl EDSL for terminal widget trees
 
 =head1 SYNOPSIS
 
-    use TML qw(App Layer VBox HBox BBox Rect Text OnKey OnUpdate);
+    use TML qw(App Layer InputRoot VBox BBox Rect Text Button OnKey OnUpdate);
+    use InputTheme;
 
     my $ui = App {
         OnKey 'q' => sub ($app, $event) { $app->quit; };
 
         BBox {
-            HBox {
-                Text {} -text => 'Left',   -material => 'ACCENT';
-                Text {} -text => 'Center', -material => 'ACCENT';
-                Text {} -text => 'Right',  -material => 'ACCENT';
-            } -gap => 2, -align => 'center';
+            VBox {
+                Text {} -text => 'Runnable TML app', -material => 'TITLE';
+                InputRoot {
+                    Button {} -label => 'Run', -focused_material => 'FOCUS',
+                        -on_press => sub ($app, $node) { $app->start_action('demo') }, -margin => 0;
+                } -margin => 0;
+            } -gap => 1;
         } -x => -10, -y => 4,
           -border_material => 'FRAME',
-          -material => 'ACCENT';
-    } -state => {};
+          -material => 'PANEL';
+    } -state => {},
+      -action => sub ($app, $report, $label) {
+          $report->({ message => "running $label" });
+          return { label => $label };
+      },
+      -exit => sub ($app, $result) {
+          print "phase=$result->{action_phase}\n";
+          exit($result->{action_exit_code} // 0);
+      };
+
+    $ui->run(InputTheme::build_theme());
 
 =head1 DESCRIPTION
 
@@ -2185,7 +2535,9 @@ All functions are exported on demand via C<@EXPORT_OK>:
 
 =head2 App BLOCK, %opts
 
-Root builder. Returns a C<TML::Runtime::App> object.
+Root builder. Returns a C<TML::Runtime::App> object. The returned object can
+still be driven manually through C<GameLoop>, but it now also acts as a
+runnable lifecycle root through C<< $app->run($theme) >>.
 
 Supported app options:
 
@@ -2194,6 +2546,75 @@ Supported app options:
 =item * C<-state> (hashref, default C<{}>)
 
 Mutable state bag exposed as C<$app->state>.
+
+=item * C<-setup> (coderef, optional)
+
+Called once before the event loop starts. Signature:
+
+    sub ($app, $runtime_info) { ... }
+
+The runtime info hash contains terminal columns, rows, frame interval, and the
+theme object passed to C<run>.
+
+=item * C<-action> (coderef, optional)
+
+Action worker callback started through C<< $app->start_action(@args) >>.
+Signature:
+
+    sub ($app, $report, @args) { ... }
+
+The callback runs in a forked worker process. Use C<$report-E<gt>(...)> to send
+progress updates back to the UI. Return a result value to make it available to
+the C<-exit> callback.
+
+=item * C<-exit> (coderef, optional)
+
+Called after the terminal has been restored to text mode. Signature:
+
+    sub ($app, $result) { ... }
+
+The result hash includes the action phase, captured stdout/stderr, action exit
+code, action result payload, runtime info, and app state.
+
+=back
+
+=head2 App Runtime Methods
+
+=over 4
+
+=item * C<< $app->run($theme) >>
+
+Creates a C<GameLoop>, runs C<-setup>, drives the UI, restores terminal state,
+and finally invokes C<-exit>.
+
+=item * C<< $app->start_action(@args) >>
+
+Starts the configured C<-action> callback unless another action is already
+running.
+
+=item * C<< $app->action_phase >>
+
+Returns C<idle>, C<running>, C<completed>, C<failed>, or C<aborted>.
+
+=item * C<< $app->action_is_running >>
+
+Returns true while the worker process is active.
+
+=item * C<< $app->action_latest_progress >>
+
+Returns the most recent progress hash reported by the action worker.
+
+=item * C<< $app->action_result >>
+
+Returns the value returned by the worker callback after successful completion.
+
+=item * C<< $app->action_stdout >> / C<< $app->action_stderr >>
+
+Returns captured worker output that can be printed from the C<-exit> callback.
+
+=item * C<< $app->runtime_info >>
+
+Returns the setup-time runtime info hash after C<-setup> has executed.
 
 =back
 
