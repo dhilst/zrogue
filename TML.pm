@@ -377,6 +377,109 @@ package TML::Runtime::App {
         confess "$label must be numeric or percentage string";
     }
 
+    sub _node_margins($self, $renderer, $node) {
+        my $props = $node->{props} // {};
+        my ($default_left, $default_top, $default_right, $default_bottom) =
+            ($node->{type} // '') eq 'Text'
+            ? (0, 0, 0, 0)
+            : (1, 0, 1, 1);
+
+        my $margin = exists $props->{margin}
+            ? TML::_resolve_int($self, $renderer, $node, $props->{margin}, 0)
+            : undef;
+        my $margin_x = exists $props->{margin_x}
+            ? TML::_resolve_int($self, $renderer, $node, $props->{margin_x}, defined($margin) ? $margin : 0)
+            : undef;
+        my $margin_y = exists $props->{margin_y}
+            ? TML::_resolve_int($self, $renderer, $node, $props->{margin_y}, defined($margin) ? $margin : 0)
+            : undef;
+
+        my $left = defined($margin_x) ? $margin_x : defined($margin) ? $margin : $default_left;
+        my $right = defined($margin_x) ? $margin_x : defined($margin) ? $margin : $default_right;
+        my $top = defined($margin_y) ? $margin_y : defined($margin) ? $margin : $default_top;
+        my $bottom = defined($margin_y) ? $margin_y : defined($margin) ? $margin : $default_bottom;
+
+        $left = 0 if $left < 0;
+        $top = 0 if $top < 0;
+        $right = 0 if $right < 0;
+        $bottom = 0 if $bottom < 0;
+        return ($left, $top, $right, $bottom);
+    }
+
+    sub _node_inner_parent_space($self, $renderer, $node, $parent_w = undef, $parent_h = undef) {
+        my ($left, $top, $right, $bottom) = $self->_node_margins($renderer, $node);
+        my $inner_w = $parent_w;
+        my $inner_h = $parent_h;
+
+        if (defined $inner_w) {
+            $inner_w -= $left + $right;
+            $inner_w = 0 if $inner_w < 0;
+        }
+        if (defined $inner_h) {
+            $inner_h -= $top + $bottom;
+            $inner_h = 0 if $inner_h < 0;
+        }
+
+        return ($inner_w, $inner_h);
+    }
+
+    sub _text_overflow($self, $renderer, $node) {
+        my $overflow = TML::_resolve($self, $renderer, $node, $node->{props}{overflow} // 'wrap');
+        $overflow = lc($overflow // 'wrap');
+        confess "text overflow must be wrap or clip"
+            unless $overflow eq 'wrap' || $overflow eq 'clip';
+        return $overflow;
+    }
+
+    sub _text_wrap_width($self, $renderer, $node, $parent_w = undef) {
+        my $props = $node->{props};
+        my $width = exists $props->{width}
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width')
+            : $parent_w;
+        return undef unless defined $width;
+        $width = 0 if $width < 0;
+        return $width;
+    }
+
+    sub _text_lines($self, $renderer, $node, $parent_w = undef) {
+        my $props = $node->{props};
+        my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
+        my $string = "$text";
+        my $overflow = $self->_text_overflow($renderer, $node);
+        my $wrap_width = $self->_text_wrap_width($renderer, $node, $parent_w);
+
+        my @lines;
+        for my $segment (split /\n/, $string, -1) {
+            if (!defined($wrap_width)) {
+                push @lines, $segment;
+                next;
+            }
+
+            if ($wrap_width == 0) {
+                push @lines, '';
+                next;
+            }
+
+            if ($overflow eq 'clip') {
+                push @lines, substr($segment, 0, $wrap_width);
+                next;
+            }
+
+            if ($segment eq '') {
+                push @lines, '';
+                next;
+            }
+
+            while (length($segment) > $wrap_width) {
+                push @lines, substr($segment, 0, $wrap_width, '');
+            }
+            push @lines, $segment;
+        }
+
+        @lines = ('') unless @lines;
+        return \@lines;
+    }
+
     sub _container_layout($self, $renderer, $node, $type, $parent_w = undef, $parent_h = undef) {
         my $cached = $self->_cache_fetch(
             'container_layout', $node, $parent_w, $parent_h, $type
@@ -399,7 +502,10 @@ package TML::Runtime::App {
 
         my @children = $node->{children}->@*;
         my @child_dims = map {
-            [ $self->_node_dimensions($renderer, $_, $child_parent_w, $child_parent_h) ]
+            my ($inner_parent_w, $inner_parent_h) = $self->_node_inner_parent_space(
+                $renderer, $_, $child_parent_w, $child_parent_h
+            );
+            [ $self->_node_dimensions($renderer, $_, $inner_parent_w, $inner_parent_h) ]
         } @children;
 
         my ($natural_w, $natural_h) = (0, 0);
@@ -535,39 +641,54 @@ package TML::Runtime::App {
 
         my $props = $node->{props};
         my $type = $node->{type};
+        my ($margin_left, $margin_top, $margin_right, $margin_bottom) = $self->_node_margins($renderer, $node);
+        my $inner_parent_w = $parent_w;
+        my $inner_parent_h = $parent_h;
+        if (defined $inner_parent_w) {
+            $inner_parent_w -= $margin_left + $margin_right;
+            $inner_parent_w = 0 if $inner_parent_w < 0;
+        }
+        if (defined $inner_parent_h) {
+            $inner_parent_h -= $margin_top + $margin_bottom;
+            $inner_parent_h = 0 if $inner_parent_h < 0;
+        }
 
         if ($type eq 'Rect') {
-            my $w = $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width', 0);
-            my $h = $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height', 0);
+            my $w = $self->_resolve_length($renderer, $node, $props->{width}, $inner_parent_w, 'width', 0);
+            my $h = $self->_resolve_length($renderer, $node, $props->{height}, $inner_parent_h, 'height', 0);
             $w = 0 if $w < 0;
             $h = 0 if $h < 0;
-            my $result = [$w, $h];
+            my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
             $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
             return $result->@*;
         }
 
         if ($type eq 'Text') {
-            my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
-            my $w = length("$text");
-            my $result = [$w, 1];
+            my $lines = $self->_text_lines($renderer, $node, $inner_parent_w);
+            my $w = 0;
+            for my $line (@$lines) {
+                my $line_w = length($line);
+                $w = $line_w if $line_w > $w;
+            }
+            my $result = [$w + $margin_left + $margin_right, scalar(@$lines) + $margin_top + $margin_bottom];
             $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
             return $result->@*;
         }
 
         if ($type eq 'VBox' || $type eq 'HBox') {
             my ($placements, $w, $h) = $self->_container_layout(
-                $renderer, $node, $type, $parent_w, $parent_h
+                $renderer, $node, $type, $inner_parent_w, $inner_parent_h
             );
-            my $result = [$w, $h];
+            my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
             $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
             return $result->@*;
         }
 
         if ($type eq 'BBox') {
             my ($w, $h, $content_x, $content_y) = $self->_bbox_layout(
-                $renderer, $node, $parent_w, $parent_h
+                $renderer, $node, $inner_parent_w, $inner_parent_h
             );
-            my $result = [$w, $h];
+            my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
             $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
             return $result->@*;
         }
@@ -576,18 +697,18 @@ package TML::Runtime::App {
             $renderer,
             $node,
             $node->{children},
-            $parent_w,
-            $parent_h,
+            $inner_parent_w,
+            $inner_parent_h,
         );
         my $w = exists $props->{width}
-            ? $self->_resolve_length($renderer, $node, $props->{width}, $parent_w, 'width', $natural_w)
+            ? $self->_resolve_length($renderer, $node, $props->{width}, $inner_parent_w, 'width', $natural_w)
             : $natural_w;
         my $h = exists $props->{height}
-            ? $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height', $natural_h)
+            ? $self->_resolve_length($renderer, $node, $props->{height}, $inner_parent_h, 'height', $natural_h)
             : $natural_h;
         $w = 0 if $w < 0;
         $h = 0 if $h < 0;
-        my $result = [$w, $h];
+        my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
         $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
         return $result->@*;
     }
@@ -631,45 +752,60 @@ package TML::Runtime::App {
         my $x = TML::_resolve_int($self, $renderer, $node, $props->{x}, 0);
         my $y = TML::_resolve_int($self, $renderer, $node, $props->{y}, 0);
         my $local = $base + Matrix3::Vec::from_xy($x, $y);
+        my ($margin_left, $margin_top, $margin_right, $margin_bottom) = $self->_node_margins($renderer, $node);
+        my $content_local = $local + Matrix3::Vec::from_xy($margin_left, -$margin_top);
+        my $inner_parent_w = $parent_w;
+        my $inner_parent_h = $parent_h;
+        if (defined $inner_parent_w) {
+            $inner_parent_w -= $margin_left + $margin_right;
+            $inner_parent_w = 0 if $inner_parent_w < 0;
+        }
+        if (defined $inner_parent_h) {
+            $inner_parent_h -= $margin_top + $margin_bottom;
+            $inner_parent_h = 0 if $inner_parent_h < 0;
+        }
 
         if ($node->{type} eq 'Rect') {
-            $self->_render_rect($renderer, $node, $local, $parent_w, $parent_h);
+            $self->_render_rect($renderer, $node, $content_local, $inner_parent_w, $inner_parent_h);
         } elsif ($node->{type} eq 'Text') {
-            my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
+            my $lines = $self->_text_lines($renderer, $node, $inner_parent_w);
             my $material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
             my $justify = TML::_resolve($self, $renderer, $node, $props->{justify});
             my %opts = (-material => $material);
             $opts{-justify} = $justify if defined $justify;
-            $renderer->render_text($local, "$text", %opts);
+            for my $row (0 .. $#$lines) {
+                my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
+                $renderer->render_text($line_pos, $lines->[$row], %opts);
+            }
         } elsif ($node->{type} eq 'VBox' || $node->{type} eq 'HBox') {
             my ($placements, $w, $h) = $self->_container_layout(
-                $renderer, $node, $node->{type}, $parent_w, $parent_h
+                $renderer, $node, $node->{type}, $inner_parent_w, $inner_parent_h
             );
             for my $placement (@$placements) {
-                my $child_pos = $local + Matrix3::Vec::from_xy($placement->{x}, -$placement->{y});
+                my $child_pos = $content_local + Matrix3::Vec::from_xy($placement->{x}, -$placement->{y});
                 $self->_render_node($renderer, $placement->{child}, $child_pos, $w, $h);
             }
             return;
         } elsif ($node->{type} eq 'BBox') {
-            $self->_render_bbox($renderer, $node, $local, $parent_w, $parent_h);
+            $self->_render_bbox($renderer, $node, $content_local, $inner_parent_w, $inner_parent_h);
             return;
         }
 
-        my $child_parent_w = $parent_w;
-        my $child_parent_h = $parent_h;
+        my $child_parent_w = $inner_parent_w;
+        my $child_parent_h = $inner_parent_h;
         if (exists $props->{width}) {
             $child_parent_w = $self->_resolve_length(
-                $renderer, $node, $props->{width}, $parent_w, 'width', $child_parent_w
+                $renderer, $node, $props->{width}, $inner_parent_w, 'width', $child_parent_w
             );
         }
         if (exists $props->{height}) {
             $child_parent_h = $self->_resolve_length(
-                $renderer, $node, $props->{height}, $parent_h, 'height', $child_parent_h
+                $renderer, $node, $props->{height}, $inner_parent_h, 'height', $child_parent_h
             );
         }
 
         for my $child ($node->{children}->@*) {
-            $self->_render_node($renderer, $child, $local, $child_parent_w, $child_parent_h);
+            $self->_render_node($renderer, $child, $content_local, $child_parent_w, $child_parent_h);
         }
     }
 

@@ -71,9 +71,9 @@ sub world_cell($renderer, $x, $y) {
 subtest 'rect and nested text render at expected positions' => sub {
     my $app = App {
         Layer {
-            Rect {} -x => 1, -y => 0, -width => 4, -height => 2, -material => 'PANEL';
+            Rect {} -x => 1, -y => 0, -width => 4, -height => 2, -material => 'PANEL', -margin => 0;
             Text {} -x => 2, -y => -1, -text => 'A', -material => 'TEXT';
-        } -x => 1, -y => 0;
+        } -x => 1, -y => 0, -margin => 0;
     } -state => {};
 
     my $renderer = mk_renderer();
@@ -110,7 +110,7 @@ subtest 'VBox applies gap and center alignment' => sub {
         VBox {
             Text {} -text => 'A', -material => 'A';
             Text {} -text => 'B', -material => 'B';
-        } -gap => 1, -width => 5, -height => 5, -align => 'center';
+        } -gap => 1, -width => 5, -height => 5, -align => 'center', -margin => 0;
     } -state => {};
 
     my $renderer = mk_renderer();
@@ -125,7 +125,7 @@ subtest 'HBox applies gap and down alignment' => sub {
         HBox {
             Text {} -text => 'L', -material => 'TEXT';
             Text {} -text => 'R', -material => 'TEXT';
-        } -gap => 1, -width => 6, -height => 3, -align => 'down';
+        } -gap => 1, -width => 6, -height => 3, -align => 'down', -margin => 0;
     } -state => {};
 
     my $renderer = mk_renderer();
@@ -139,7 +139,7 @@ subtest 'HBox width supports percentage at root' => sub {
     my $app = App {
         HBox {
             Text {} -text => 'X', -material => 'X';
-        } -width => '50%', -align => 'right';
+        } -width => '50%', -align => 'right', -margin => 0;
     } -state => {};
 
     my $renderer = mk_renderer(6, 20);
@@ -158,8 +158,8 @@ subtest 'HBox width percentage resolves against BBox inner width' => sub {
             HBox {
                 Text {} -text => 'A', -material => 'A';
                 Text {} -text => 'B', -material => 'B';
-            } -width => '50%', -align => 'right';
-        } -width => 10, -height => 4, -border_material => 'ASCII';
+            } -width => '50%', -align => 'right', -margin => 0;
+        } -width => 10, -height => 4, -border_material => 'ASCII', -margin => 0;
     } -state => {};
 
     my $renderer = mk_renderer();
@@ -174,7 +174,7 @@ subtest 'HBox layout cache respects renderer size changes across renders' => sub
     my $app = App {
         HBox {
             Text {} -text => 'X', -material => 'X';
-        } -width => '50%', -align => 'right';
+        } -width => '50%', -align => 'right', -margin => 0;
     } -state => {};
 
     my $renderer_20 = mk_renderer(6, 20);
@@ -190,7 +190,7 @@ subtest 'HBox layout cache invalidates when tree props change' => sub {
     my $app = App {
         HBox {
             Text {} -text => 'X', -material => 'X';
-        } -width => '50%', -align => 'right';
+        } -width => '50%', -align => 'right', -margin => 0;
     } -state => {};
 
     my $renderer_before = mk_renderer(6, 20);
@@ -204,13 +204,40 @@ subtest 'HBox layout cache invalidates when tree props change' => sub {
     is_deeply(world_cell($renderer_after, 4, 0), [ord('X'), 5, -1, -1], 'updated width 25% reflected after mutation');
 };
 
+subtest 'uniform margin offsets text render origin and dimensions' => sub {
+    my $app = App {
+        Text {} -text => 'X', -material => 'X', -margin => 1;
+    } -state => {};
+
+    my $renderer = mk_renderer(6, 20);
+    $app->render($renderer);
+
+    is_deeply(world_cell($renderer, 1, -1), [ord('X'), 5, -1, -1], 'margin shifts text in by one cell on both axes');
+    is_deeply(world_cell($renderer, 0, 0), [ord(' '), 0xffffff, 0x000000, 0], 'outer margin area is left untouched');
+};
+
+subtest 'HBox accounts for child margin in spacing' => sub {
+    my $app = App {
+        HBox {
+            Text {} -text => 'A', -material => 'A', -margin_x => 1;
+            Text {} -text => 'B', -material => 'B';
+        } -gap => 0, -margin => 0;
+    } -state => {};
+
+    my $renderer = mk_renderer();
+    $app->render($renderer);
+
+    is_deeply(world_cell($renderer, 1, 0), [ord('A'), 6, -1, -1], 'first child renders after its left margin');
+    is_deeply(world_cell($renderer, 3, 0), [ord('B'), 7, -1, -1], 'second child is laid out after first child total width including margin');
+};
+
 subtest 'dynamic width coderef re-evaluates every frame' => sub {
     my $app = App {
         HBox {
             Text {} -text => 'X', -material => 'X';
         } -width => sub ($app, $renderer, $node) {
             return $app->state->{box_width};
-        }, -align => 'right';
+        }, -align => 'right', -margin => 0;
     } -state => { box_width => 10 };
 
     my $renderer_before = mk_renderer(6, 20);
@@ -228,7 +255,7 @@ subtest 'BBox uses border_material and material semantics' => sub {
     my $app = App {
         BBox {
             Text {} -text => 'X', -material => 'TEXT';
-        } -material => 'BORDER', -border_material => 'ASCII';
+        } -material => 'BORDER', -border_material => 'ASCII', -margin => 0;
     } -state => {};
 
     my $renderer = mk_renderer();
@@ -236,6 +263,38 @@ subtest 'BBox uses border_material and material semantics' => sub {
 
     is_deeply(world_cell($renderer, 0, 0), [ord('+'), 9, -1, -1], 'top-left border uses border material style');
     is_deeply(world_cell($renderer, 1, -1), [ord('X'), 3, -1, -1], 'child is rendered one cell inside border');
+};
+
+subtest 'Text wraps within parent width by default' => sub {
+    my $app = App {
+        BBox {
+            Text {} -text => 'ABCDEFG', -material => 'TEXT';
+        } -width => 6, -height => 5, -border_material => 'ASCII', -margin => 0;
+    } -state => {};
+
+    my $renderer = mk_renderer();
+    $app->render($renderer);
+
+    is_deeply(world_cell($renderer, 1, -1), [ord('A'), 3, -1, -1], 'first wrapped line starts in content area');
+    is_deeply(world_cell($renderer, 4, -1), [ord('D'), 3, -1, -1], 'first wrapped line is constrained to inner width');
+    is_deeply(world_cell($renderer, 1, -2), [ord('E'), 3, -1, -1], 'second wrapped line continues on next row');
+    is_deeply(world_cell($renderer, 3, -2), [ord('G'), 3, -1, -1], 'wrapped remainder is rendered on the next row');
+    is_deeply(world_cell($renderer, 1, -3), [ord(' '), 0xffffff, 0x000000, 0], 'no extra wrapped row is emitted');
+};
+
+subtest 'Text can clip instead of wrap when requested' => sub {
+    my $app = App {
+        BBox {
+            Text {} -text => 'ABCDEFG', -material => 'TEXT', -overflow => 'clip';
+        } -width => 6, -height => 4, -border_material => 'ASCII', -margin => 0;
+    } -state => {};
+
+    my $renderer = mk_renderer();
+    $app->render($renderer);
+
+    is_deeply(world_cell($renderer, 1, -1), [ord('A'), 3, -1, -1], 'clipped text starts in content area');
+    is_deeply(world_cell($renderer, 3, -1), [ord('C'), 3, -1, -1], 'clip keeps visible portion only');
+    is_deeply(world_cell($renderer, 1, -2), [ord(' '), 0xffffff, 0x000000, 0], 'clip does not spill into next row');
 };
 
 subtest 'update and key handlers can mutate state and quit app' => sub {
