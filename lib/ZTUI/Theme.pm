@@ -1,14 +1,13 @@
-package Theme;
+package ZTUI::Theme;
 
 use v5.36;
 use utf8;
 use Carp qw(confess);
-use lib ".";
-use IniFile;
-use MaterialMapper;
-use BorderMapper;
-use TerminalStyle;
-use TerminalBorderStyle;
+use ZTUI::IniFile;
+use ZTUI::MaterialMapper;
+use ZTUI::BorderMapper;
+use ZTUI::TerminalStyle;
+use ZTUI::TerminalBorderStyle;
 
 sub new(%opts) {
     my $material_mapper = $opts{'-material_mapper'};
@@ -26,12 +25,12 @@ sub new(%opts) {
         border_mapper => $border_mapper,
         warned_materials => {},
         warned_borders => {},
-        fallback_material_style => TerminalStyle::new(
+        fallback_material_style => ZTUI::TerminalStyle::new(
             -fg => 0xffffff,
             -bg => 0x000000,
             -attrs => 0,
         ),
-        fallback_border_style => TerminalBorderStyle::new(
+        fallback_border_style => ZTUI::TerminalBorderStyle::new(
             -fg => 0xffffff,
             -bg => 0x000000,
             -attrs => 0,
@@ -48,7 +47,7 @@ sub from_file($path_or_content, %opts) {
     my $strict = exists($opts{-strict}) ? $opts{-strict} : 1;
     confess "-strict must be 0 or 1" unless $strict == 0 || $strict == 1;
 
-    my $ini = IniFile::new(-strict => $strict);
+    my $ini = ZTUI::IniFile::new(-strict => $strict);
     my $data;
 
     if (defined $opts{-content}) {
@@ -151,7 +150,7 @@ sub from_file($path_or_content, %opts) {
                 $style_args{-attrs} = $attrs if defined $attrs;
             }
 
-            $material_map{$material} = TerminalStyle::new(%style_args);
+            $material_map{$material} = ZTUI::TerminalStyle::new(%style_args);
             next;
         }
 
@@ -197,7 +196,7 @@ sub from_file($path_or_content, %opts) {
                 }
             }
 
-            $border_map{$border_material} = TerminalBorderStyle::new(%style_args);
+            $border_map{$border_material} = ZTUI::TerminalBorderStyle::new(%style_args);
             next;
         }
 
@@ -205,14 +204,14 @@ sub from_file($path_or_content, %opts) {
         confess "Unknown section '$section'";
     }
 
-    my $material_mapper = MaterialMapper::from_callback(sub ($material) {
+    my $material_mapper = ZTUI::MaterialMapper::from_callback(sub ($material) {
         return $material_map{$material};
     });
-    my $border_mapper = BorderMapper::from_callback(sub ($border_material) {
+    my $border_mapper = ZTUI::BorderMapper::from_callback(sub ($border_material) {
         return $border_map{$border_material};
     });
 
-    return Theme::new(
+    return ZTUI::Theme::new(
         -material_mapper => $material_mapper,
         -border_mapper => $border_mapper,
     );
@@ -341,7 +340,7 @@ sub border_cache_key($self, $dt, $x, $y, $border_material, $edge) {
 sub _resolve_material($self, $material) {
     my $mapper = $self->{material_mapper};
     my $style = $mapper->lookup($material);
-    return $style if defined $style && ref($style) eq 'TerminalStyle';
+    return $style if defined $style && ref($style) eq 'ZTUI::TerminalStyle';
 
     return $self->_material_default($material);
 }
@@ -349,7 +348,7 @@ sub _resolve_material($self, $material) {
 sub _resolve_border($self, $border_material) {
     my $mapper = $self->{border_mapper};
     my $style = $mapper->lookup($border_material);
-    return $style if defined $style && ref($style) eq 'TerminalBorderStyle';
+    return $style if defined $style && ref($style) eq 'ZTUI::TerminalBorderStyle';
 
     return $self->_border_default($border_material);
 }
@@ -358,7 +357,7 @@ sub _material_default($self, $material) {
     $self->_warn_missing_once(material => $material);
     my $mapper = $self->{material_mapper};
     my $default = $mapper->lookup('DEFAULT');
-    return $default if defined $default && ref($default) eq 'TerminalStyle';
+    return $default if defined $default && ref($default) eq 'ZTUI::TerminalStyle';
     return $self->{fallback_material_style};
 }
 
@@ -366,7 +365,7 @@ sub _border_default($self, $material) {
     $self->_warn_missing_once(border => $material);
     my $mapper = $self->{border_mapper};
     my $default = $mapper->lookup('DEFAULT');
-    return $default if defined $default && ref($default) eq 'TerminalBorderStyle';
+    return $default if defined $default && ref($default) eq 'ZTUI::TerminalBorderStyle';
     return $self->{fallback_border_style};
 }
 
@@ -388,9 +387,9 @@ Theme
 
 =head1 SYNOPSIS
 
-    use Theme;
+    use ZTUI::Theme;
 
-    my $theme = Theme::new(
+    my $theme = ZTUI::Theme::new(
         -material_mapper => $material_mapper,
         -border_mapper => $border_mapper,
     );

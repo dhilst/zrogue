@@ -2,12 +2,12 @@ use v5.36;
 use utf8;
 
 use FindBin qw($Bin);
-use lib "$Bin/../..";
+use lib "$Bin/../../lib";
 use lib $Bin;
 
-use GameLoop;
+use ZTUI::GameLoop;
 use InputTheme;
-use TML qw(App Layer InputRoot FocusScope VBox HBox BBox Rect Text TextField Toggle Button ButtonRow List TextViewport OnKey OnUpdate);
+use ZTUI::TML qw(App Layer InputRoot FocusScope VBox HBox BBox Rect Text TextField Toggle Button ButtonRow List TextViewport OnKey OnUpdate);
 
 my @targets = map { +{ label => $_ } } ('Ruins Gate', 'Archive Lift', 'Signal Tower', 'Flooded Vault');
 my @log_lines = (
@@ -89,4 +89,4 @@ my $ui = App {
     } -x => -25, -y => 8;
 } -state => \%state;
 
-GameLoop::new($theme, $ui)->run();
+ZTUI::GameLoop::new($theme, $ui)->run();

@@ -1,13 +1,12 @@
-package Skin;
+package ZTUI::Skin;
 
 use v5.36;
 use utf8;
 use Carp;
 
-use lib ".";
-use Matrix3;
-use Quad;
-use Surface;
+use ZTUI::Matrix3;
+use ZTUI::Quad;
+use ZTUI::Surface;
 
 sub _bounds($geo) {
     my ($minx, $maxx, $miny, $maxy);
@@ -37,8 +36,8 @@ sub layout($geo) {
         maxy => $maxy,
         width => $width,
         height => $height,
-        topleft => Matrix3::Vec::from_xy($minx, $maxy),
-        geo_offset => Matrix3::Vec::from_xy(-$minx, -$maxy),
+        topleft => ZTUI::Matrix3::Vec::from_xy($minx, $maxy),
+        geo_offset => ZTUI::Matrix3::Vec::from_xy(-$minx, -$maxy),
     };
 }
 
@@ -72,39 +71,39 @@ sub from_geometry($geo, %opts) {
         $defaults = [ord($blank), $fg, $bgc, $attrs];
     }
 
-    my $surface = Surface::new($surface_h, $surface_w,
+    my $surface = ZTUI::Surface::new($surface_h, $surface_w,
         -material => $mapper,
         -defaults => $defaults,
         -blank => $blank,
         -autoclip => $autoclip);
-    my $clear_surface = Surface::new($surface_h, $surface_w,
+    my $clear_surface = ZTUI::Surface::new($surface_h, $surface_w,
         -material => $mapper,
         -defaults => $defaults,
         -blank => $blank,
         -autoclip => $autoclip);
 
     my $geo_offset = $layout->{geo_offset};
-    my $bg_quad = Quad::from_wh($bg_w, $bg_h, $bg);
-    $surface->render_quad(Matrix3::Vec::from_xy(0, 0), $bg_quad);
+    my $bg_quad = ZTUI::Quad::from_wh($bg_w, $bg_h, $bg);
+    $surface->render_quad(ZTUI::Matrix3::Vec::from_xy(0, 0), $bg_quad);
 
     if (defined $shadow) {
         $surface->render_line(
-            Matrix3::Vec::from_xy($bg_w, -1),
-            Matrix3::Vec::from_xy($bg_w, -$bg_h),
+            ZTUI::Matrix3::Vec::from_xy($bg_w, -1),
+            ZTUI::Matrix3::Vec::from_xy($bg_w, -$bg_h),
             $shadow,
         );
         if ($bg_w > 1) {
             $surface->render_line(
-                Matrix3::Vec::from_xy(1, -$bg_h),
-                Matrix3::Vec::from_xy($bg_w - 1, -$bg_h),
+                ZTUI::Matrix3::Vec::from_xy(1, -$bg_h),
+                ZTUI::Matrix3::Vec::from_xy($bg_w - 1, -$bg_h),
                 $shadow,
             );
         }
     }
 
     $surface->render_geometry($geo_offset, $geo);
-    my $clear_quad = Quad::from_wh($surface_w, $surface_h, $clear);
-    $clear_surface->render_quad(Matrix3::Vec::from_xy(0, 0), $clear_quad);
+    my $clear_quad = ZTUI::Quad::from_wh($surface_w, $surface_h, $clear);
+    $clear_surface->render_quad(ZTUI::Matrix3::Vec::from_xy(0, 0), $clear_quad);
 
     return wantarray ? ($surface, $clear_surface) : $surface;
 }
@@ -119,8 +118,8 @@ Skin
 
 =head1 SYNOPSIS
 
-    use Skin;
-    my $surface = Skin::from_geometry($geo,
+    use ZTUI::Skin;
+    my $surface = ZTUI::Skin::from_geometry($geo,
         -mapper => $mat,
         -bg => 'MENU_BG',
         -shadow => 'SHADOW_BG',

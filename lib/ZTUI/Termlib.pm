@@ -1,4 +1,4 @@
-package Termlib;
+package ZTUI::Termlib;
 
 use v5.36;
 use utf8;
@@ -9,9 +9,8 @@ use Data::Dumper;
 use Term::Cap;
 use Term::ANSIColor qw(colored);
 
-use lib ".";
-use Utils qw(getters);
-use SGR qw(:attrs);
+use ZTUI::Utils qw(getters);
+use ZTUI::SGR qw(:attrs);
 
 getters qw(term);
 
@@ -64,9 +63,9 @@ sub write_color($self, $value, $col, $row, $fg = -1, $bg = -1, $attrs = -1) {
     $col = int($col);
     $row = int($row);
     my @sgr_attrs;
-    push @sgr_attrs, SGR::attrs($attrs) if $attrs ne -1;
-    push @sgr_attrs, SGR::fg($fg) if $fg ne -1;
-    push @sgr_attrs, SGR::bg($bg) if $bg ne -1;
+    push @sgr_attrs, ZTUI::SGR::attrs($attrs) if $attrs ne -1;
+    push @sgr_attrs, ZTUI::SGR::fg($fg) if $fg ne -1;
+    push @sgr_attrs, ZTUI::SGR::bg($bg) if $bg ne -1;
 
     print $self->term->Tputs("sc", 1);
     print $self->term->Tgoto("cm", $col, $row);
@@ -124,8 +123,8 @@ Termlib
 
 =head1 SYNOPSIS
 
-    use Termlib;
-    my $term = Termlib::new();
+    use ZTUI::Termlib;
+    my $term = ZTUI::Termlib::new();
     $term->initscr;
     $term->write("Hello", 0, 0);
 
@@ -161,7 +160,7 @@ Writes text using 24-bit colors and attributes.
 
 =item write_vec($text, $pos_vec)
 
-Writes at the given Matrix3::Vec.
+Writes at the given ZTUI::Matrix3::Vec.
 
 =item initscr($default_value)
 

@@ -2,11 +2,12 @@ use v5.36;
 use Test::More;
 use Term::ANSIColor;
 
-use lib '.';
-use SGR;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::SGR;
 
 subtest 'attrs works as expected' => sub {
-    my @attrs = SGR::attrs(0);
+    my @attrs = ZTUI::SGR::attrs(0);
 
     is_deeply(\@attrs, []);
 

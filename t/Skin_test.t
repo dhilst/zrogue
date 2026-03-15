@@ -1,11 +1,12 @@
 use v5.36;
 use Test::More;
 
-use lib ".";
-use Geometry3;
-use MaterialMapper;
-use Skin;
-use TerminalStyle;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::Geometry3;
+use ZTUI::MaterialMapper;
+use ZTUI::Skin;
+use ZTUI::TerminalStyle;
 
 sub cell_at($surface, $x, $y) {
     my $row = -$y;
@@ -13,15 +14,15 @@ sub cell_at($surface, $x, $y) {
 }
 
 subtest 'skin with shadow' => sub {
-    my $mat = MaterialMapper::from_callback(sub ($m) {
-        return TerminalStyle::new(-bg => 0) if $m eq 'DEFAULT';
-        return TerminalStyle::new(-bg => 1) if $m eq 'BG';
-        return TerminalStyle::new(-bg => 2) if $m eq 'SHADOW';
-        return TerminalStyle::new();
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($m) {
+        return ZTUI::TerminalStyle::new(-bg => 0) if $m eq 'DEFAULT';
+        return ZTUI::TerminalStyle::new(-bg => 1) if $m eq 'BG';
+        return ZTUI::TerminalStyle::new(-bg => 2) if $m eq 'SHADOW';
+        return ZTUI::TerminalStyle::new();
     });
-    my $geo = Geometry3::from_str("AB\nCD");
+    my $geo = ZTUI::Geometry3::from_str("AB\nCD");
 
-    my ($surface, $clear_surface) = Skin::from_geometry($geo,
+    my ($surface, $clear_surface) = ZTUI::Skin::from_geometry($geo,
         -mapper => $mat,
         -bg => 'BG',
         -shadow => 'SHADOW',
@@ -47,13 +48,13 @@ subtest 'skin with shadow' => sub {
 };
 
 subtest 'skin without shadow' => sub {
-    my $mat = MaterialMapper::from_callback(sub ($m) {
-        return TerminalStyle::new(-bg => 0) if $m eq 'DEFAULT';
-        return TerminalStyle::new(-bg => 3) if $m eq 'BG';
-        return TerminalStyle::new();
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($m) {
+        return ZTUI::TerminalStyle::new(-bg => 0) if $m eq 'DEFAULT';
+        return ZTUI::TerminalStyle::new(-bg => 3) if $m eq 'BG';
+        return ZTUI::TerminalStyle::new();
     });
-    my $geo = Geometry3::from_str("X");
-    my ($surface, $clear_surface) = Skin::from_geometry($geo,
+    my $geo = ZTUI::Geometry3::from_str("X");
+    my ($surface, $clear_surface) = ZTUI::Skin::from_geometry($geo,
         -mapper => $mat,
         -bg => 'BG',
     );

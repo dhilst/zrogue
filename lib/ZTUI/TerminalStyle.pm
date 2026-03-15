@@ -1,4 +1,4 @@
-package TerminalStyle;
+package ZTUI::TerminalStyle;
 
 use v5.36;
 use utf8;
@@ -27,7 +27,7 @@ sub new(%args) {
 
 sub from_hashref($style) {
     confess "style must be a hashref" unless ref($style) eq 'HASH';
-    TerminalStyle::new($style->%*);
+    ZTUI::TerminalStyle::new($style->%*);
 }
 
 sub fg($self) {
@@ -75,9 +75,9 @@ TerminalStyle
 
 =head1 SYNOPSIS
 
-    use TerminalStyle;
+    use ZTUI::TerminalStyle;
 
-    my $style = TerminalStyle::new(
+    my $style = ZTUI::TerminalStyle::new(
         -fg => 0xffffff,
         -bg => 0x10222c,
         -attrs => 0,

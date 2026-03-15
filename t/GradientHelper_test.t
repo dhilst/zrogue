@@ -2,8 +2,9 @@ use v5.36;
 use Test::More;
 use Test::Exception;
 
-use lib '.';
-use GradientHelper;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::GradientHelper;
 
 sub _approx($got, $expected, $eps = 1e-9) {
     abs($got - $expected) <= $eps;
@@ -11,28 +12,28 @@ sub _approx($got, $expected, $eps = 1e-9) {
 
 subtest 'constructor validation' => sub {
     dies_ok {
-        GradientHelper::new(
+        ZTUI::GradientHelper::new(
             start_color => 0x000000,
             end_color => 0xffffff,
         );
     } 'angle is required';
 
     dies_ok {
-        GradientHelper::new(
+        ZTUI::GradientHelper::new(
             angle_deg => 0,
             end_color => 0xffffff,
         );
     } 'start_color is required';
 
     dies_ok {
-        GradientHelper::new(
+        ZTUI::GradientHelper::new(
             angle_deg => 0,
             start_color => 0x000000,
         );
     } 'end_color is required';
 
     dies_ok {
-        GradientHelper::new(
+        ZTUI::GradientHelper::new(
             angle_deg => 'nope',
             start_color => 0x000000,
             end_color => 0xffffff,
@@ -40,23 +41,23 @@ subtest 'constructor validation' => sub {
     } 'angle must be numeric';
 
     dies_ok {
-        GradientHelper::new(
+        ZTUI::GradientHelper::new(
             angle_deg => 0,
             start_color => -1,
             end_color => 0xffffff,
         );
     } 'start_color range validated';
 
-    my $gradient = GradientHelper::new(
+    my $gradient = ZTUI::GradientHelper::new(
         angle_deg => 0,
         start_color => 0x000000,
         end_color => 0xffffff,
     );
-    isa_ok($gradient, 'GradientHelper');
+    isa_ok($gradient, 'ZTUI::GradientHelper');
 };
 
 subtest 'advance mutates phase and wraps' => sub {
-    my $gradient = GradientHelper::new(
+    my $gradient = ZTUI::GradientHelper::new(
         angle_deg => 0,
         start_color => 0x000000,
         end_color => 0xffffff,
@@ -74,7 +75,7 @@ subtest 'advance mutates phase and wraps' => sub {
 };
 
 subtest 'horizontal interpolation' => sub {
-    my $gradient = GradientHelper::new(
+    my $gradient = ZTUI::GradientHelper::new(
         angle_deg => 0,
         start_color => 0xff0000,
         end_color => 0x0000ff,
@@ -86,7 +87,7 @@ subtest 'horizontal interpolation' => sub {
 };
 
 subtest 'vertical interpolation follows bottom-to-top angle convention' => sub {
-    my $gradient = GradientHelper::new(
+    my $gradient = ZTUI::GradientHelper::new(
         angle_deg => 90,
         start_color => 0x000000,
         end_color => 0xffffff,
@@ -97,7 +98,7 @@ subtest 'vertical interpolation follows bottom-to-top angle convention' => sub {
 };
 
 subtest 'phase shift affects sampled color' => sub {
-    my $gradient = GradientHelper::new(
+    my $gradient = ZTUI::GradientHelper::new(
         angle_deg => 0,
         start_color => 0x000000,
         end_color => 0xffffff,
@@ -109,7 +110,7 @@ subtest 'phase shift affects sampled color' => sub {
 };
 
 subtest 'color_at_local validates dimensions' => sub {
-    my $gradient = GradientHelper::new(
+    my $gradient = ZTUI::GradientHelper::new(
         angle_deg => 0,
         start_color => 0x000000,
         end_color => 0xffffff,

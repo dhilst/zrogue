@@ -1,8 +1,9 @@
 use v5.36;
 use Test::More;
 
-use lib ".";
-use UTF8Buffer;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::UTF8Buffer;
 
 sub bytes_for($codepoint) {
     my $char = pack("U", $codepoint);
@@ -12,14 +13,14 @@ sub bytes_for($codepoint) {
 }
 
 subtest 'ascii pass-through' => sub {
-    my $buf = UTF8Buffer::new();
+    my $buf = ZTUI::UTF8Buffer::new();
     my @out = $buf->push_bytes("abc");
     is_deeply(\@out, [qw(a b c)], 'ascii chars');
     is($buf->buf, '', 'buffer empty');
 };
 
 subtest 'two-byte sequence across chunks' => sub {
-    my $buf = UTF8Buffer::new();
+    my $buf = ZTUI::UTF8Buffer::new();
     my $bytes = bytes_for(0x00E9); # U+00E9
     my @out = $buf->push_bytes(substr($bytes, 0, 1));
     is_deeply(\@out, [], 'no output on partial');
@@ -30,21 +31,21 @@ subtest 'two-byte sequence across chunks' => sub {
 };
 
 subtest 'three-byte sequence' => sub {
-    my $buf = UTF8Buffer::new();
+    my $buf = ZTUI::UTF8Buffer::new();
     my $bytes = bytes_for(0x20AC); # U+20AC
     my @out = $buf->push_bytes($bytes);
     is_deeply(\@out, [pack("U", 0x20AC)], 'decoded 3-byte char');
 };
 
 subtest 'four-byte sequence' => sub {
-    my $buf = UTF8Buffer::new();
+    my $buf = ZTUI::UTF8Buffer::new();
     my $bytes = bytes_for(0x1F600); # U+1F600
     my @out = $buf->push_bytes($bytes);
     is_deeply(\@out, [pack("U", 0x1F600)], 'decoded 4-byte char');
 };
 
 subtest 'drops invalid leading continuation byte' => sub {
-    my $buf = UTF8Buffer::new();
+    my $buf = ZTUI::UTF8Buffer::new();
     my @out = $buf->push_bytes("\x80A");
     is_deeply(\@out, ['A'], 'invalid byte skipped');
     is($buf->buf, '', 'buffer empty');

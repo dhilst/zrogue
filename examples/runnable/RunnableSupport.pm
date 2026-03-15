@@ -8,7 +8,7 @@ use FindBin qw($Bin);
 use Getopt::Long qw(GetOptionsFromArray);
 use Pod::Usage qw(pod2usage);
 
-use lib "$Bin/../..";
+use lib "$Bin/../../lib";
 use lib "$Bin/../input";
 
 use InputTheme;

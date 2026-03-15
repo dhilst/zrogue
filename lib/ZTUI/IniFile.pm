@@ -1,4 +1,4 @@
-package IniFile;
+package ZTUI::IniFile;
 
 use v5.36;
 use Carp qw(confess);
@@ -176,9 +176,9 @@ IniFile
 
 =head1 SYNOPSIS
 
-    use IniFile;
+    use ZTUI::IniFile;
 
-    my $ini = IniFile::new();
+    my $ini = ZTUI::IniFile::new();
     my $data = $ini->parse_file('theme.ini');
 
     $ini->validate($data,

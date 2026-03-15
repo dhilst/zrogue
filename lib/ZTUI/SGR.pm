@@ -1,4 +1,4 @@
-package SGR;
+package ZTUI::SGR;
 use v5.36;
 use Exporter 'import';
 
@@ -59,10 +59,10 @@ SGR
 
 =head1 SYNOPSIS
 
-    use SGR qw(:attrs);
-    my $fg = SGR::fg(0xff0000);
-    my $bg = SGR::bg(0x000000);
-    my @attrs = SGR::attrs(ATTR_BOLD | ATTR_UNDERLINE);
+    use ZTUI::SGR qw(:attrs);
+    my $fg = ZTUI::SGR::fg(0xff0000);
+    my $bg = ZTUI::SGR::bg(0x000000);
+    my @attrs = ZTUI::SGR::attrs(ATTR_BOLD | ATTR_UNDERLINE);
 
 =head1 DESCRIPTION
 

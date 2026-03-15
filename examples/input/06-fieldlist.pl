@@ -2,12 +2,12 @@ use v5.36;
 use utf8;
 
 use FindBin qw($Bin);
-use lib "$Bin/../..";
+use lib "$Bin/../../lib";
 use lib $Bin;
 
-use GameLoop;
+use ZTUI::GameLoop;
 use InputTheme;
-use TML qw(App Layer InputRoot FocusScope VBox BBox Rect FieldList Text OnKey OnUpdate);
+use ZTUI::TML qw(App Layer InputRoot FocusScope VBox BBox Rect FieldList Text OnKey OnUpdate);
 
 my %state = (
     name => 'Ada',
@@ -55,4 +55,4 @@ my $ui = App {
     } -x => -23, -y => 6;
 } -state => \%state;
 
-GameLoop::new($theme, $ui)->run();
+ZTUI::GameLoop::new($theme, $ui)->run();

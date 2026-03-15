@@ -1,4 +1,4 @@
-package GameLoop {
+package ZTUI::GameLoop {
     use v5.36;
 
     BEGIN {
@@ -12,11 +12,10 @@ package GameLoop {
     use Carp;
     use Time::HiRes qw(time);
 
-    use lib ".";
-    use Input;
-    use Matrix3;
-    use Renderers;
-    use Termlib;
+    use ZTUI::Input;
+    use ZTUI::Matrix3;
+    use ZTUI::Renderers;
+    use ZTUI::Termlib;
 
     sub new($theme, @widgets) {
         confess "missing theme" unless defined $theme;
@@ -25,12 +24,12 @@ package GameLoop {
         bless {
             blank => ' ',
             frame_interval => 1 / 60,
-            input => Input::new(),
+            input => ZTUI::Input::new(),
             localtime => time,
             theme => $theme,
             renderer => undef,
             resized => 1,
-            term => Termlib::new(),
+            term => ZTUI::Termlib::new(),
             anyevent_watchers => [],
             widgets => \@widgets,
         }, __PACKAGE__;
@@ -39,7 +38,7 @@ package GameLoop {
     sub rebuild_renderer($self) {
         my $cols = $self->{term}->cols;
         my $rows = $self->{term}->rows;
-        my $renderer = Renderers::DoubleBuffering::new(
+        my $renderer = ZTUI::Renderers::DoubleBuffering::new(
             terminal_space($cols, $rows),
             $rows,
             $cols - 1,
@@ -51,7 +50,7 @@ package GameLoop {
     }
 
     sub terminal_space($cols, $rows) {
-        Matrix3::translate(($cols - 1) / 2, $rows / 2)->mul_mat_inplace($Matrix3::REFLECT_X);
+        ZTUI::Matrix3::translate(($cols - 1) / 2, $rows / 2)->mul_mat_inplace($ZTUI::Matrix3::REFLECT_X);
     }
 
     sub _bootstrap_anyevent_with_ev() {

@@ -2,18 +2,18 @@ use v5.36;
 use utf8;
 
 use FindBin qw($Bin);
-use lib "$Bin/../..";
+use lib "$Bin/../../lib";
 use lib $Bin;
 
-use TML qw(App Layer HBox VBox BBox Rect Text Button OnKey OnUpdate InputRoot);
-use Theme;
+use ZTUI::TML qw(App Layer HBox VBox BBox Rect Text Button OnKey OnUpdate InputRoot);
+use ZTUI::Theme;
 
 my %state = (
     sample_items => [ 'Load theme', 'Inspect renderer output', 'Press q to quit' ],
     status => 'ini theme loaded from file',
 );
 
-my $theme = Theme::from_file("$Bin/22-theme-from-file.ini");
+my $theme = ZTUI::Theme::from_file("$Bin/22-theme-from-file.ini");
 
 my $ui = App {
     OnUpdate { frame_update(@_) };
@@ -27,7 +27,7 @@ my $ui = App {
         BBox {
             VBox {
                 Text {} -text => 'Runnable 22: Theme from INI', -material => 'TITLE';
-                Text {} -text => 'This demo proves Theme::from_file.', -material => 'TEXT';
+                Text {} -text => 'This demo proves ZTUI::Theme::from_file.', -material => 'TEXT';
 
                 Text {} -text => sub ($app, $renderer, $node) {
                     return 'status: ' . ($app->state->{status} // 'ok');
@@ -50,7 +50,6 @@ my $ui = App {
 $ui->run($theme);
 
 sub frame_update($app, $dt, @events) {
-    $app->skip_render unless @events;
     return;
 }
 
@@ -62,7 +61,7 @@ __END__
 
 =head1 DESCRIPTION
 
-Demonstrates loading a theme from an INI file using C<Theme::from_file>. Run from
+Demonstrates loading a theme from an INI file using C<ZTUI::Theme::from_file>. Run from
 repo root with:
 
   perl examples/runnable/22-theme-from-file.pl

@@ -2,11 +2,11 @@ use v5.36;
 use utf8;
 
 use FindBin qw($Bin);
-use lib "$Bin/../..";
+use lib "$Bin/../../lib";
 use lib $Bin;
 
 use RunnableSupport qw(theme frame_update sleep_step progress_message format_exit_report);
-use TML qw(App Layer VBox BBox Rect Text OnKey OnUpdate);
+use ZTUI::TML qw(App Layer VBox BBox Rect Text OnKey OnUpdate);
 
 my $ui = App {
     OnUpdate { frame_update(@_) };

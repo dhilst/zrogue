@@ -2,8 +2,9 @@ use v5.36;
 use Test::More;
 use Time::HiRes qw(time);
 
-use lib '.';
-use GameLoop;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::GameLoop;
 
 {
     package TestGameLoop::Input {
@@ -56,7 +57,7 @@ sub mk_loop(@widgets) {
         input => TestGameLoop::Input->new(),
         localtime => time(),
         widgets => \@widgets,
-    }, 'GameLoop';
+    }, 'ZTUI::GameLoop';
     return ($loop, $renderer);
 }
 

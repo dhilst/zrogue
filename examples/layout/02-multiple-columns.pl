@@ -2,12 +2,12 @@ use v5.36;
 use utf8;
 
 use FindBin qw($Bin);
-use lib "$Bin/../..";
+use lib "$Bin/../../lib";
 use lib $Bin;
 
-use GameLoop;
+use ZTUI::GameLoop;
 use LayoutTheme;
-use TML qw(App Layer VBox HBox BBox Rect Text OnKey OnUpdate);
+use ZTUI::TML qw(App Layer VBox HBox BBox Rect Text OnKey OnUpdate);
 
 my $theme = LayoutTheme::build_theme();
 
@@ -84,7 +84,7 @@ my $ui = App {
         };
 } -state => {};
 
-GameLoop::new($theme, $ui)->run();
+ZTUI::GameLoop::new($theme, $ui)->run();
 
 __END__
 

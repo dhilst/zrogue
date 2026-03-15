@@ -1,4 +1,4 @@
-package Surface;
+package ZTUI::Surface;
 
 use v5.36;
 use utf8;
@@ -6,10 +6,10 @@ use Carp;
 use FindBin qw($Bin);
 use lib "$Bin";
 
-use Buffer2D;
-use MaterialMapper;
-use Matrix3;
-use Utils qw(getters);
+use ZTUI::Buffer2D;
+use ZTUI::MaterialMapper;
+use ZTUI::Matrix3;
+use ZTUI::Utils qw(getters);
 
 getters qw(
     buffer
@@ -35,7 +35,7 @@ sub new($H, $W, %opts) {
     confess "material must support style()"
         unless ref($material) && $material->can('style');
 
-    my $buffer = Buffer2D::new("l4", $H, $W, $defaults, -autoclip => $autoclip);
+    my $buffer = ZTUI::Buffer2D::new("l4", $H, $W, $defaults, -autoclip => $autoclip);
     bless {
         buffer => $buffer,
         height => $H,
@@ -101,7 +101,7 @@ sub render_line($self, $pos_start, $pos_end, $material) {
     my $err = $dx + $dy;
 
     while (1) {
-        $self->render_text(Matrix3::Vec::from_xy($x0, $y0), $glyph, %opts);
+        $self->render_text(ZTUI::Matrix3::Vec::from_xy($x0, $y0), $glyph, %opts);
         last if $x0 == $x1 && $y0 == $y1;
         my $e2 = 2 * $err;
         if ($e2 >= $dy) {
@@ -119,7 +119,7 @@ sub render_quad($self, $pos_vec, $quad) {
     _assert_vec($pos_vec);
     my $style = $self->_style_for($quad->material);
     for my $row (0 .. $quad->height - 1) {
-        my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
+        my $row_pos = $pos_vec * ZTUI::Matrix3::translate(0, -$row);
         $self->_render_style($row_pos, $quad->width, $style->%*);
     }
 }
@@ -146,21 +146,21 @@ Surface
 
 =head1 SYNOPSIS
 
-    use Surface;
-    use Matrix3;
-    use Quad;
-    use MaterialMapper;
+    use ZTUI::Surface;
+    use ZTUI::Matrix3;
+    use ZTUI::Quad;
+    use ZTUI::MaterialMapper;
 
-    my $mat = MaterialMapper::from_callback(sub ($material) {
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($material) {
         return { -bg => 0x303030 } if $material eq 'BG';
         return { -fg => 0xffffff } if $material eq 'FG';
     });
 
-    my $surface = Surface::new(10, 20, -material => $mat);
+    my $surface = ZTUI::Surface::new(10, 20, -material => $mat);
 
-    $surface->render_text(Matrix3::Vec::from_xy(1, 0), "Hello", -fg => 0xffffff);
-    $surface->render_line(Matrix3::Vec::from_xy(0, 0), Matrix3::Vec::from_xy(5, -2), 'BG');
-    $surface->render_quad(Matrix3::Vec::from_xy(0, 0), Quad::from_wh(4, 2, 'BG'));
+    $surface->render_text(ZTUI::Matrix3::Vec::from_xy(1, 0), "Hello", -fg => 0xffffff);
+    $surface->render_line(ZTUI::Matrix3::Vec::from_xy(0, 0), ZTUI::Matrix3::Vec::from_xy(5, -2), 'BG');
+    $surface->render_quad(ZTUI::Matrix3::Vec::from_xy(0, 0), ZTUI::Quad::from_wh(4, 2, 'BG'));
 
 =head1 DESCRIPTION
 

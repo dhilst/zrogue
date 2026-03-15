@@ -3,8 +3,9 @@ use Test::More;
 use Test::Exception;
 use File::Temp qw(tempfile);
 
-use lib '.';
-use IniFile;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::IniFile;
 
 sub write_tmp_ini($content) {
     my ($fh, $path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
@@ -14,17 +15,17 @@ sub write_tmp_ini($content) {
 }
 
 subtest 'constructor accepts strict flag' => sub {
-    my $ini = IniFile::new();
-    isa_ok($ini, 'IniFile', 'default constructor');
+    my $ini = ZTUI::IniFile::new();
+    isa_ok($ini, 'ZTUI::IniFile', 'default constructor');
 
-    my $strict = IniFile::new(-strict => 0);
-    isa_ok($strict, 'IniFile', 'strict can be disabled');
+    my $strict = ZTUI::IniFile::new(-strict => 0);
+    isa_ok($strict, 'ZTUI::IniFile', 'strict can be disabled');
 
-    dies_ok { IniFile::new(-strict => 2) } 'invalid strict value dies';
+    dies_ok { ZTUI::IniFile::new(-strict => 2) } 'invalid strict value dies';
 };
 
 subtest 'parse handles whitespace and comments' => sub {
-    my $ini = IniFile::new();
+    my $ini = ZTUI::IniFile::new();
     my $data = $ini->parse(
         -content => <<'INI'
 # header comment
@@ -53,7 +54,7 @@ INI
 };
 
 subtest 'parse_file loads filesystem file content' => sub {
-    my $ini = IniFile::new();
+    my $ini = ZTUI::IniFile::new();
     my $path = write_tmp_ini("[material:ONLY]\nfg=11\n");
     my $data = $ini->parse_file($path);
 
@@ -61,8 +62,8 @@ subtest 'parse_file loads filesystem file content' => sub {
 };
 
 subtest 'unparse is deterministic' => sub {
-    my $ini = IniFile::new();
-    my $source = <<'INI'
+    my $ini = ZTUI::IniFile::new();
+my $source = <<'INI'
 [border:FRAME]
 fg=9
 glyphs=┌,─,┐,│, ,│,└,─,┘
@@ -71,6 +72,7 @@ glyphs=┌,─,┐,│, ,│,└,─,┘
 bg=2
 fg=1
 INI
+;
     my $data = $ini->parse(-content => $source);
     my $text = $ini->unparse($data);
     my $again = $ini->parse(-content => $text);
@@ -78,7 +80,7 @@ INI
 };
 
 subtest 'validation rejects malformed data in strict mode' => sub {
-    my $ini = IniFile::new();
+    my $ini = ZTUI::IniFile::new();
     my $data = $ini->parse(
         -content => <<'INI'
 [material:TITLE]

@@ -1,14 +1,13 @@
-package Geometry3;
+package ZTUI::Geometry3;
 
 use v5.36;
 use utf8;
 use Carp;
 use List::Util;
 
-use lib ".";
-use Utils qw(getters);
-use Matrix3 qw($EAST $WEST);
-use Viewport;
+use ZTUI::Utils qw(getters);
+use ZTUI::Matrix3 qw($EAST $WEST);
+use ZTUI::Viewport;
 
 use overload
     '""' => \&to_str,
@@ -48,9 +47,9 @@ sub from_str($str, %opts) {
     my $bg = $opts{-bg};
     my @geometry;
     my $array = _parse($str);
-    my $pos = Matrix3::Vec::from_xy(0, 0);
+    my $pos = ZTUI::Matrix3::Vec::from_xy(0, 0);
     my $width = scalar $array->[0]->@*;
-    my $T = Matrix3::translate(-$width, -1);
+    my $T = ZTUI::Matrix3::translate(-$width, -1);
     my %points;
     my %regions;
     my $label_text = undef;
@@ -90,7 +89,7 @@ sub from_str($str, %opts) {
                         my $label_pos = $regions{$key};
                         my $h = abs($label_pos->y - $pos->y) + 1;
                         my $w = abs($label_pos->x - $pos->x);
-                        $regions{$key} = Viewport::from_pos_hw($label_pos, $h, $w);
+                        $regions{$key} = ZTUI::Viewport::from_pos_hw($label_pos, $h, $w);
                     } else {
                         # it is the opening @ tag
                         $regions{$key} = $label_pos;
@@ -111,7 +110,7 @@ sub from_str($str, %opts) {
                 # If points are adjacent, concatenate them instead of pushing a new
                 # point. This helps to keep geometry smaller.
                 my ($lastpos, $lastvalue) = $geometry[$#geometry]->@*;
-                my $newpos = $pos * Matrix3::translate(-length($lastvalue), 0);
+                my $newpos = $pos * ZTUI::Matrix3::translate(-length($lastvalue), 0);
                 if ($lastpos eq $newpos) {
                     $geometry[$#geometry]->[1] .= $col;
                     $pos *= $EAST;
@@ -135,7 +134,7 @@ sub from_str($str, %opts) {
 }
 
 sub copy($self) {
-    Geometry3::from_array($self->@*);
+    ZTUI::Geometry3::from_array($self->@*);
 }
 
 sub max_row($self) {
@@ -165,7 +164,7 @@ sub cols($self) { $self->max_col + 1; }
 
 sub center($self) {
     use integer;
-    Matrix3::Vec::from_xy($self->cols/2, -$self->rows/2);
+    ZTUI::Matrix3::Vec::from_xy($self->cols/2, -$self->rows/2);
 }
 
 sub mul_inplace($self, $matrix) {
@@ -185,7 +184,7 @@ sub mul_inplace($self, $matrix) {
 sub centerfy_inplace($self) {
     my $center = $self->center;
     $center->mul_scalar_inplace(-1);
-    $self->mul_inplace(Matrix3::translate($center->@*));
+    $self->mul_inplace(ZTUI::Matrix3::translate($center->@*));
 }
 
 1;
@@ -210,7 +209,7 @@ from_str constructor;
 
 This constructor expect a string like this:
 
-    my $triangle = Geometry3::from_str(<<'EOF', -centerfy => 1);
+    my $triangle = ZTUI::Geometry3::from_str(<<'EOF', -centerfy => 1);
     ..x..
     .x x.
     xxxxx
@@ -224,7 +223,7 @@ Use $FOO for named points. For named regions use @BAR, @BAR in a diagonal,
 here is an example
 
 
-my $screen = Geometry3::from_str(<<'EOF', -centerfy)
+my $screen = ZTUI::Geometry3::from_str(<<'EOF', -centerfy)
 +-----------------------------+
 |                             |
 |       Score: $SCORE         |
@@ -239,7 +238,7 @@ my $screen = Geometry3::from_str(<<'EOF', -centerfy)
 EOF
 
 Then you can access it with
-$screen->points->{SCORE};    # a Matrix3::Vec
+$screen->points->{SCORE};    # a ZTUI::Matrix3::Vec
 $screen->regions->{DETAILS}; # a Viewport
 
 The coordinates are relative to the geometry origin which

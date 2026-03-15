@@ -1,11 +1,19 @@
 use v5.36;
 use Test::More;
 use Test::Exception;
+use utf8;
+use open qw(:std :encoding(UTF-8));
 
-use lib '.';
-use TerminalStyle;
-use TerminalBorderStyle;
-use Theme;
+BEGIN {
+    binmode STDOUT, ':utf8';
+    binmode STDERR, ':utf8';
+}
+
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::TerminalStyle;
+use ZTUI::TerminalBorderStyle;
+use ZTUI::Theme;
 use File::Temp qw(tempfile);
 
 sub warnings($code) {
@@ -76,7 +84,7 @@ sub warnings($code) {
 sub build_theme(%opts) {
     my $material_mapper = $opts{material_mapper} // TestMaterialMapper::new({});
     my $border_mapper = $opts{border_mapper} // TestBorderMapper::new({});
-    return Theme::new(
+    return ZTUI::Theme::new(
         -material_mapper => $material_mapper,
         -border_mapper => $border_mapper,
     );
@@ -86,15 +94,15 @@ subtest 'constructor validates required mappers' => sub {
     my $material = TestMaterialMapper::new({});
     my $border = TestBorderMapper::new({});
 
-    dies_ok { Theme::new(-border_mapper => $border) } 'missing material mapper dies';
-    dies_ok { Theme::new(-material_mapper => $material) } 'missing border mapper dies';
-    dies_ok { Theme::new(-material_mapper => bless({}, 'BadMat'), -border_mapper => $border) } 'material mapper must support lookup';
-    dies_ok { Theme::new(-material_mapper => $material, -border_mapper => bless({}, 'BadBorder')) } 'border mapper must support lookup';
+    dies_ok { ZTUI::Theme::new(-border_mapper => $border) } 'missing material mapper dies';
+    dies_ok { ZTUI::Theme::new(-material_mapper => $material) } 'missing border mapper dies';
+    dies_ok { ZTUI::Theme::new(-material_mapper => bless({}, 'BadMat'), -border_mapper => $border) } 'material mapper must support lookup';
+    dies_ok { ZTUI::Theme::new(-material_mapper => $material, -border_mapper => bless({}, 'BadBorder')) } 'border mapper must support lookup';
 };
 
 subtest 'delegates successful lookups to mappers' => sub {
-    my $material = TerminalStyle::new(-fg => 0xabcdef);
-    my $border = TerminalBorderStyle::new(-border => ['1' .. '9']);
+    my $material = ZTUI::TerminalStyle::new(-fg => 0xabcdef);
+    my $border = ZTUI::TerminalBorderStyle::new(-border => ['1' .. '9']);
 
     my $theme = build_theme(
         material_mapper => TestMaterialMapper::new({ OK => $material }),
@@ -106,7 +114,7 @@ subtest 'delegates successful lookups to mappers' => sub {
 };
 
 subtest 'uses mapper DEFAULT for missing material key and warns once' => sub {
-    my $default = TerminalStyle::new(-fg => 0x123456, -attrs => 9);
+    my $default = ZTUI::TerminalStyle::new(-fg => 0x123456, -attrs => 9);
     my $theme = build_theme(
         material_mapper => TestMaterialMapper::new({ DEFAULT => $default }),
     );
@@ -125,7 +133,7 @@ subtest 'uses built-in material fallback when DEFAULT is absent' => sub {
 
     my @warnings = warnings(sub {
         my $style = $theme->style('NOPE');
-        isa_ok($style, 'TerminalStyle');
+        isa_ok($style, 'ZTUI::TerminalStyle');
         is_deeply({ %$style }, {
             -fg => 0xffffff,
             -bg => 0x000000,
@@ -137,7 +145,7 @@ subtest 'uses built-in material fallback when DEFAULT is absent' => sub {
 };
 
 subtest 'uses mapper DEFAULT for missing border key and warns once' => sub {
-    my $default = TerminalBorderStyle::new(
+    my $default = ZTUI::TerminalBorderStyle::new(
         -fg => 0x010203,
         -bg => 0x040506,
         -attrs => 7,
@@ -161,7 +169,7 @@ subtest 'uses built-in border fallback when DEFAULT is absent' => sub {
 
     my @warnings = warnings(sub {
         my $style = $theme->border('NOPE');
-        isa_ok($style, 'TerminalBorderStyle');
+        isa_ok($style, 'ZTUI::TerminalBorderStyle');
         is($style->fg, 0xffffff, 'default border fg');
         is($style->bg, 0x000000, 'default border bg');
         is($style->attrs, 0, 'default border attrs');
@@ -202,10 +210,11 @@ INI
 ;
 
     my ($fh, $path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    binmode $fh, ':encoding(UTF-8)';
     print {$fh} $content;
     close $fh;
 
-    my $theme = Theme::from_file($path);
+    my $theme = ZTUI::Theme::from_file($path);
 
     is_deeply($theme->style('TITLE')->as_hashref, {
         -fg => 0x00ff00,
@@ -217,7 +226,7 @@ INI
     }, 'default material loaded from file');
 
     my $frame = $theme->border('FRAME');
-    isa_ok($frame, 'TerminalBorderStyle');
+    isa_ok($frame, 'ZTUI::TerminalBorderStyle');
     is_deeply($frame->border, ['┌', '─', '┐', '│', ' ', '│', '└', '─', '┘'], 'frame border glyphs loaded');
     is($frame->fg, 9, 'frame border fg loaded');
     is($frame->bg, 17, 'frame border bg loaded');
@@ -225,13 +234,14 @@ INI
 };
 
 subtest 'from_file supports inline content mode' => sub {
-    my $theme = Theme::from_file('ignored', -content => <<'INI'
+    my $theme = ZTUI::Theme::from_file('ignored', -content => <<'INI'
 [material:ALT]
 fg = 255
 bg = -1
 
 [border:ALT]
 fg = -1
+bg = -1
 glyphs = +,+,+,+, ,+,+,+,+
 INI
 );
@@ -250,7 +260,7 @@ INI
     my ($fh1, $path1) = tempfile(SUFFIX => '.ini', UNLINK => 1);
     print {$fh1} $bad_sections;
     close $fh1;
-    dies_ok { Theme::from_file($path1) } 'unknown top-level section dies';
+    dies_ok { ZTUI::Theme::from_file($path1) } 'unknown top-level section dies';
 
     my $bad_border = <<'INI'
 [border:FRAME]
@@ -261,7 +271,7 @@ INI
     my ($fh2, $path2) = tempfile(SUFFIX => '.ini', UNLINK => 1);
     print {$fh2} $bad_border;
     close $fh2;
-    dies_ok { Theme::from_file($path2) } 'malformed border glyph list dies';
+    dies_ok { ZTUI::Theme::from_file($path2) } 'malformed border glyph list dies';
 };
 
 done_testing;

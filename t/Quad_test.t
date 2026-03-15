@@ -1,9 +1,10 @@
 use v5.36;
 use Test::More;
 
-use lib '.';
-use Matrix3;
-use Quad;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::Matrix3;
+use ZTUI::Quad;
 
 sub vec_is($vec, $x, $y, $label) {
     my $eps = 1e-9;
@@ -12,7 +13,7 @@ sub vec_is($vec, $x, $y, $label) {
 }
 
 subtest 'quad accessors works' => sub {
-    my $quad = Quad::from_wh(4.5, 2.25);
+    my $quad = ZTUI::Quad::from_wh(4.5, 2.25);
 
     vec_is($quad->topleft, 0.0, 0.0, 'topleft');
     vec_is($quad->topright, 4.5, 0.0, 'topright');

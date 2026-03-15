@@ -1,12 +1,12 @@
-package Renderers::Naive {
+package ZTUI::Renderers::Naive {
     use v5.36;
     use FindBin qw($Bin);
     use Carp;
     use lib "$Bin";
 
-    use Matrix3;
-    use Termlib;
-    use Utils qw(getters);
+    use ZTUI::Matrix3;
+    use ZTUI::Termlib;
+    use ZTUI::Utils qw(getters);
 
     getters qw(terminal_space term blank mapper);
 
@@ -22,7 +22,7 @@ package Renderers::Naive {
 
     sub _style_fields($style) {
         confess "missing style" unless defined $style;
-        if (ref($style) eq 'TerminalStyle') {
+        if (ref($style) eq 'ZTUI::TerminalStyle') {
             return (
                 defined($style->fg) ? $style->fg : -1,
                 defined($style->bg) ? $style->bg : -1,
@@ -43,7 +43,7 @@ package Renderers::Naive {
         bless {
             blank => $blank,
             mapper => $mapper,
-            term => Termlib::new(),
+            term => ZTUI::Termlib::new(),
             terminal_space => $terminal_space,
         }, __PACKAGE__,
     }
@@ -56,8 +56,8 @@ package Renderers::Naive {
         confess "Invalid material DEFAULT" if !defined $style;
         my ($fg, $bg, $attrs) = _style_fields($style);
 
-        my $cols = Termlib::cols() - 1;
-        my $rows = Termlib::rows();
+        my $cols = ZTUI::Termlib::cols() - 1;
+        my $rows = ZTUI::Termlib::rows();
         my $line = $self->blank x $cols;
         for my $row (0 .. $rows - 1) {
             $self->term->write_color($line, 0, $row, $fg, $bg, $attrs);
@@ -65,7 +65,7 @@ package Renderers::Naive {
     }
 
     sub render_geometry($self, $at_vec, $geo) {
-        my $coord_mapper = $self->terminal_space * Matrix3::translate($at_vec->@*);
+        my $coord_mapper = $self->terminal_space * ZTUI::Matrix3::translate($at_vec->@*);
         for my $po ($geo->@*) {
             my ($pos_vec, $value) = $po->@*;
             $self->_write_quantized($value, $pos_vec * $coord_mapper);
@@ -73,7 +73,7 @@ package Renderers::Naive {
     }
 
     sub erase_geometry($self, $at_vec, $geo, $char) {
-        my $coord_mapper = $self->terminal_space * Matrix3::translate($at_vec->@*);
+        my $coord_mapper = $self->terminal_space * ZTUI::Matrix3::translate($at_vec->@*);
         for my $po ($geo->@*) {
             my ($pos_vec, $value) = $po->@*;
             $self->_write_quantized($char x length($value), $pos_vec * $coord_mapper);
@@ -86,7 +86,7 @@ package Renderers::Naive {
 
     sub _render_quad($self, $pos_vec, $h, $w, %opts) {
         for my $row (0 .. $h - 1) {
-            my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
+            my $row_pos = $pos_vec * ZTUI::Matrix3::translate(0, -$row);
             $self->render_style($row_pos, $w, %opts);
         }
     }
@@ -107,8 +107,8 @@ package Renderers::Naive {
         my $stride = $buffer->stride;
         my $src_w = $buffer->W;
         my $src_h = $buffer->H;
-        my $dst_w = Termlib::cols() - 1;
-        my $dst_h = Termlib::rows();
+        my $dst_w = ZTUI::Termlib::cols() - 1;
+        my $dst_h = ZTUI::Termlib::rows();
         my $pack_template = sprintf("(%s)*", $buffer->packstr);
 
         $col0 = int($col0);
@@ -137,9 +137,9 @@ package Renderers::Naive {
 
             for (my $i = 0; $i < @payload; $i += 4) {
                 my ($cp, $fg, $bg, $attrs) = @payload[$i .. $i + 3];
-                $outstr .= color(SGR::fg($fg)) if $fg != -1;
-                $outstr .= color(SGR::bg($bg)) if $bg != -1;
-                $outstr .= color(SGR::attrs($attrs)) // "" if defined $attrs && $attrs != -1;
+                $outstr .= color(ZTUI::SGR::fg($fg)) if $fg != -1;
+                $outstr .= color(ZTUI::SGR::bg($bg)) if $bg != -1;
+                $outstr .= color(ZTUI::SGR::attrs($attrs)) // "" if defined $attrs && $attrs != -1;
                 $outstr .= chr($cp);
             }
             $outstr .= color('reset');
@@ -160,7 +160,7 @@ package Renderers::Naive {
         my $err = $dx + $dy;
 
         while (1) {
-            $self->render_text(Matrix3::Vec::from_xy($x0, $y0), $glyph, %opts);
+            $self->render_text(ZTUI::Matrix3::Vec::from_xy($x0, $y0), $glyph, %opts);
             last if $x0 == $x1 && $y0 == $y1;
             my $e2 = 2 * $err;
             if ($e2 >= $dy) {
@@ -177,13 +177,13 @@ package Renderers::Naive {
     sub render_text($self, $at_vec, $text, %opts) {
         $opts{-justify} //= 'left';
         if ($opts{-justify} eq 'center') {
-            my $T = Matrix3::translate(- length($text) / 2, 0);
+            my $T = ZTUI::Matrix3::translate(- length($text) / 2, 0);
             my $p = $at_vec->copy;
             $p *= $T *= $self->terminal_space;
             $self->_write_quantized($text, $p);
             return;
         } elsif ($opts{-justify} eq 'right') {
-            my $T = Matrix3::translate(- length($text), 0);
+            my $T = ZTUI::Matrix3::translate(- length($text), 0);
             my $p = $at_vec->copy;
             $p *= $T *= $self->terminal_space;
             $self->_write_quantized($text, $p);
@@ -201,14 +201,14 @@ package Renderers::Naive {
     }
 }
 
-package Renderers::DoubleBuffering {
+package ZTUI::Renderers::DoubleBuffering {
     use v5.36;
     use utf8;
     use Carp;
     use Data::Dumper;
-    use Buffer2D;
-    use Utils qw(getters);
-    use Matrix3 qw($EAST);
+    use ZTUI::Buffer2D;
+    use ZTUI::Utils qw(getters);
+    use ZTUI::Matrix3 qw($EAST);
     no autovivification;
 
     getters qw(
@@ -234,7 +234,7 @@ package Renderers::DoubleBuffering {
 
     sub _style_fields($style) {
         confess "missing style" unless defined $style;
-        if (ref($style) eq 'TerminalStyle') {
+        if (ref($style) eq 'ZTUI::TerminalStyle') {
             return (
                 defined($style->fg) ? $style->fg : -1,
                 defined($style->bg) ? $style->bg : -1,
@@ -335,8 +335,8 @@ package Renderers::DoubleBuffering {
         my ($fg, $bg, $attrs) = _style_fields($style);
         my @default = (ord($blank), $fg, $bg, $attrs);
 
-        my $bbuf = Buffer2D::new($packstr, $H, $W, \@default, -autoclip => 1);
-        my $fbuf = Buffer2D::new($packstr, $H, $W, \@default, -autoclip => 1);
+        my $bbuf = ZTUI::Buffer2D::new($packstr, $H, $W, \@default, -autoclip => 1);
+        my $fbuf = ZTUI::Buffer2D::new($packstr, $H, $W, \@default, -autoclip => 1);
         my $self = bless {
             bbuf => $bbuf,
             fbuf => $fbuf,
@@ -345,7 +345,7 @@ package Renderers::DoubleBuffering {
             terminal_space => $terminal_space,
             width => $W,
             packstr => $packstr,
-            term => Termlib::new(),
+            term => ZTUI::Termlib::new(),
             mapper => $resolved->{mapper},
             theme => $resolved->{theme},
             static_cache => { material => {}, border => {} },
@@ -400,9 +400,9 @@ package Renderers::DoubleBuffering {
 
         my $pos = $pos_vec * $self->terminal_space;
         if ($opts{-justify} eq 'right') {
-            $pos *= Matrix3::translate(-length($text), 0);
+            $pos *= ZTUI::Matrix3::translate(-length($text), 0);
         } elsif ($opts{-justify} eq 'center') {
-            $pos *= Matrix3::translate(-length($text)/2, 0);
+            $pos *= ZTUI::Matrix3::translate(-length($text)/2, 0);
         }
         my ($col, $row) = _quantize_xy($pos);
         my ($fg, $bg, $attrs) = $self->_style_from_opts_or_material($col, $row, %opts);
@@ -422,14 +422,14 @@ package Renderers::DoubleBuffering {
 
     sub render_rect($self, $pos_vec, $w, $h, %opts) {
         for my $row (0 .. $h - 1) {
-            my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
+            my $row_pos = $pos_vec * ZTUI::Matrix3::translate(0, -$row);
             $self->render_text($row_pos, $self->blank x $w, %opts);
         }
     }
 
     sub _render_quad($self, $pos_vec, $h, $w, %opts) {
         for my $row (0 .. $h - 1) {
-            my $row_pos = $pos_vec * Matrix3::translate(0, -$row);
+            my $row_pos = $pos_vec * ZTUI::Matrix3::translate(0, -$row);
             $self->render_style($row_pos, $w, %opts);
         }
     }
@@ -501,7 +501,7 @@ package Renderers::DoubleBuffering {
         my $err = $dx + $dy;
 
         while (1) {
-            $self->render_text(Matrix3::Vec::from_xy($x0, $y0), $glyph, %opts);
+            $self->render_text(ZTUI::Matrix3::Vec::from_xy($x0, $y0), $glyph, %opts);
             last if $x0 == $x1 && $y0 == $y1;
             my $e2 = 2 * $err;
             if ($e2 >= $dy) {
@@ -537,7 +537,7 @@ package Renderers::DoubleBuffering {
 
         for my $entry (@edges) {
             my ($dx, $dy, $edge, $glyph_idx) = $entry->@*;
-            my $cell_pos = $pos_vec + Matrix3::Vec::from_xy($dx, -$dy);
+            my $cell_pos = $pos_vec + ZTUI::Matrix3::Vec::from_xy($dx, -$dy);
             my $screen_pos = $cell_pos * $self->terminal_space;
             my ($col, $row) = _quantize_xy($screen_pos);
             my $border_style = $self->_resolve_border_style($border_material, $col, $row, $edge);
@@ -573,16 +573,16 @@ package Renderers::DoubleBuffering {
             my $outstr = "";
 
             my $terminal_state = undef;
-            Utils::Array::for_batch {
+            ZTUI::Utils::Array::for_batch {
                 my ($cp, $fg, $bg, $attrs) = @_;
 
                 if (!defined $terminal_state
                     || (   $fg    != $terminal_state->{fg}
                         || $bg    != $terminal_state->{bg}
                         || $attrs != $terminal_state->{attrs})) {
-                    $outstr .= color(SGR::fg($fg)) if $fg != -1;
-                    $outstr .= color(SGR::bg($bg)) if $bg != -1;
-                    $outstr .= color(SGR::attrs($attrs)) // "" if defined $attrs && $attrs != -1;
+                    $outstr .= color(ZTUI::SGR::fg($fg)) if $fg != -1;
+                    $outstr .= color(ZTUI::SGR::bg($bg)) if $bg != -1;
+                    $outstr .= color(ZTUI::SGR::attrs($attrs)) // "" if defined $attrs && $attrs != -1;
                     $terminal_state = {
                         fg => $fg,
                         bg => $bg,
@@ -625,8 +625,8 @@ Renderers
 
 =head1 SYNOPSIS
 
-    use Renderers;
-    my $renderer = Renderers::DoubleBuffering::new($T, $H, $W, $theme, ' ');
+    use ZTUI::Renderers;
+    my $renderer = ZTUI::Renderers::DoubleBuffering::new($T, $H, $W, $theme, ' ');
     $renderer->initscr;
     $renderer->render_text($pos, "Hello", -material => 'DEFAULT');
     $renderer->flush;
@@ -635,8 +635,8 @@ Renderers
 
 Renderers provides two renderer implementations used by the TUI:
 
-Renderers::Naive writes directly to the terminal for every draw call.
-Renderers::DoubleBuffering writes into a back buffer and flushes the
+ZTUI::Renderers::Naive writes directly to the terminal for every draw call.
+ZTUI::Renderers::DoubleBuffering writes into a back buffer and flushes the
 diff to the terminal.
 
 Both implement a shared API for text, rects, borders, geometry, lines, and

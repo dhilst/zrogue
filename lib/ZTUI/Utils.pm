@@ -1,4 +1,4 @@
-package Utils;
+package ZTUI::Utils;
 use v5.36;
 
 use Exporter qw(import);
@@ -21,7 +21,7 @@ sub getters(@fields) {
     }
 }
 
-package Utils::Array {
+package ZTUI::Utils::Array {
     use Carp;
     use Data::Dumper;
 
@@ -61,12 +61,12 @@ Utils
 
 =head1 SYNOPSIS
 
-    use Utils qw(aref getters);
+    use ZTUI::Utils qw(aref getters);
 
 =head1 DESCRIPTION
 
 Utils provides small helper functions used across the codebase. It also
-defines C<Utils::Array> helpers for array batching and flattening.
+defines C<ZTUI::Utils::Array> helpers for array batching and flattening.
 
 =head1 FUNCTIONS
 
@@ -82,7 +82,7 @@ Defines simple accessors in the caller package.
 
 =back
 
-=head1 Utils::Array
+=head1 ZTUI::Utils::Array
 
 =over 4
 

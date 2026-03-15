@@ -2,15 +2,16 @@ use v5.36;
 use Test::More;
 use Test::Exception;
 
-use lib '.';
-use Event;
-use GameLoop;
-use Matrix3 qw($ID);
-use Renderers;
-use TerminalBorderStyle;
-use TerminalStyle;
-use Theme;
-use TML qw(App Layer VBox HBox BBox Rect Text InputRoot FocusScope Button Toggle TextField List FieldList TextViewport ButtonRow OnKey OnUpdate);
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::Event;
+use ZTUI::GameLoop;
+use ZTUI::Matrix3 qw($ID);
+use ZTUI::Renderers;
+use ZTUI::TerminalBorderStyle;
+use ZTUI::TerminalStyle;
+use ZTUI::Theme;
+use ZTUI::TML qw(App Layer VBox HBox BBox Rect Text InputRoot FocusScope Button Toggle TextField List FieldList TextViewport ButtonRow OnKey OnUpdate);
 
 {
     package TMLTest::MaterialMapper;
@@ -20,14 +21,14 @@ use TML qw(App Layer VBox HBox BBox Rect Text InputRoot FocusScope Button Toggle
     }
     sub lookup($self, $material) {
         $self->{calls}{$material}++;
-        return TerminalStyle::new(-fg => 1, -bg => 2, -attrs => 3) if $material eq 'PANEL';
-        return TerminalStyle::new(-fg => 3, -bg => -1, -attrs => -1) if $material eq 'TEXT';
-        return TerminalStyle::new(-fg => 6, -bg => -1, -attrs => -1) if $material eq 'A';
-        return TerminalStyle::new(-fg => 7, -bg => -1, -attrs => -1) if $material eq 'B';
-        return TerminalStyle::new(-fg => 5, -bg => -1, -attrs => -1) if $material eq 'X';
-        return TerminalStyle::new(-fg => 10, -bg => -1, -attrs => 1) if $material eq 'FOCUS';
-        return TerminalStyle::new(-fg => 9, -bg => 0, -attrs => -1) if $material eq 'BORDER';
-        return TerminalStyle::new(-fg => 0xffffff, -bg => 0x000000, -attrs => 0) if $material eq 'DEFAULT';
+        return ZTUI::TerminalStyle::new(-fg => 1, -bg => 2, -attrs => 3) if $material eq 'PANEL';
+        return ZTUI::TerminalStyle::new(-fg => 3, -bg => -1, -attrs => -1) if $material eq 'TEXT';
+        return ZTUI::TerminalStyle::new(-fg => 6, -bg => -1, -attrs => -1) if $material eq 'A';
+        return ZTUI::TerminalStyle::new(-fg => 7, -bg => -1, -attrs => -1) if $material eq 'B';
+        return ZTUI::TerminalStyle::new(-fg => 5, -bg => -1, -attrs => -1) if $material eq 'X';
+        return ZTUI::TerminalStyle::new(-fg => 10, -bg => -1, -attrs => 1) if $material eq 'FOCUS';
+        return ZTUI::TerminalStyle::new(-fg => 9, -bg => 0, -attrs => -1) if $material eq 'BORDER';
+        return ZTUI::TerminalStyle::new(-fg => 0xffffff, -bg => 0x000000, -attrs => 0) if $material eq 'DEFAULT';
         return undef;
     }
     sub style($self, $material) { $self->lookup($material) }
@@ -42,13 +43,13 @@ use TML qw(App Layer VBox HBox BBox Rect Text InputRoot FocusScope Button Toggle
         bless {}, $class;
     }
     sub lookup($self, $material) {
-        return TerminalBorderStyle::new(
+        return ZTUI::TerminalBorderStyle::new(
             -fg => 9,
             -bg => -1,
             -attrs => -1,
             -border => ['+', '-', '+', '|', ' ', '|', '+', '-', '+'],
         ) if $material eq 'ASCII' || $material eq 'BORDER';
-        return TerminalBorderStyle::new() if $material eq 'DEFAULT';
+        return ZTUI::TerminalBorderStyle::new() if $material eq 'DEFAULT';
         return undef;
     }
     sub style($self, $material) { $self->lookup($material) }
@@ -57,15 +58,15 @@ use TML qw(App Layer VBox HBox BBox Rect Text InputRoot FocusScope Button Toggle
 }
 
 sub mk_renderer($h = 8, $w = 20) {
-    my $theme = Theme::new(
+    my $theme = ZTUI::Theme::new(
         -material_mapper => TMLTest::MaterialMapper->new(),
         -border_mapper => TMLTest::BorderMapper->new(),
     );
-    return Renderers::DoubleBuffering::new(GameLoop::terminal_space($w, $h), $h, $w, $theme, ' ');
+    return ZTUI::Renderers::DoubleBuffering::new(ZTUI::GameLoop::terminal_space($w, $h), $h, $w, $theme, ' ');
 }
 
 sub world_cell($renderer, $x, $y) {
-    my $pos = Matrix3::Vec::from_xy($x, $y) * $renderer->terminal_space;
+    my $pos = ZTUI::Matrix3::Vec::from_xy($x, $y) * $renderer->terminal_space;
     my ($col, $row) = (int($pos->[0]), int($pos->[1]));
     return [ $renderer->bbuf->get($col, $row) ];
 }
@@ -318,7 +319,7 @@ subtest 'update and key handlers can mutate state and quit app' => sub {
     is($app->update(0.2), -1, 'skip_render causes next update to return -1');
     ok($app->update(0.2), 'skip_render only applies to one frame');
 
-    ok(!$app->update(0.1, Event::key_press('q')), 'quit key stops app');
+    ok(!$app->update(0.1, ZTUI::Event::key_press('q')), 'quit key stops app');
 };
 
 subtest 'Button handles focus and activation before app OnKey handlers' => sub {
@@ -333,7 +334,7 @@ subtest 'Button handles focus and activation before app OnKey handlers' => sub {
         OnKey ' ' => sub ($app, $event) { $global++ };
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press(' ')), 'button activation keeps app running');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'button activation keeps app running');
     is($pressed, 1, 'focused button handled space activation');
     is($global, 0, 'handled button activation does not fall through to OnKey');
 
@@ -354,8 +355,8 @@ subtest 'adjacent buttons support local focus traversal and activation' => sub {
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press('j')), 'button row consumes local forward navigation');
-    ok($app->update(0.1, Event::key_press(' ')), 'focused second button activates');
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'button row consumes local forward navigation');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'focused second button activates');
     is($result, 'no', 'button-row navigation can reach and activate second button');
 
     my $renderer = mk_renderer(6, 20);
@@ -375,11 +376,11 @@ subtest 'Toggle flips bound scalar and focus traversal uses j/k' => sub {
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press(' ')), 'toggle activation handled');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'toggle activation handled');
     is($value, 1, 'toggle flips bound scalar');
 
-    ok($app->update(0.1, Event::key_press('j')), 'focus moves forward');
-    ok($app->update(0.1, Event::key_press('k')), 'focus moves backward');
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'focus moves forward');
+    ok($app->update(0.1, ZTUI::Event::key_press('k')), 'focus moves backward');
 
     my $renderer = mk_renderer(6, 30);
     $app->render($renderer);
@@ -407,23 +408,23 @@ subtest 'TextField requires explicit activation and supports commit/cancel' => s
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press('a')), 'app keeps running when inactive textfield ignores typing');
+    ok($app->update(0.1, ZTUI::Event::key_press('a')), 'app keeps running when inactive textfield ignores typing');
     is($value, 'seed', 'inactive textfield does not mutate bound scalar');
 
-    ok($app->update(0.1, Event::key_press("\n")), 'enter activates textfield');
-    ok($app->update(0.1, Event::key_press('a')), 'active textfield accepts printable input');
-    ok($app->update(0.1, Event::key_press('b')), 'active textfield accepts subsequent printable input');
-    ok($app->update(0.1, Event::key_press("\x7f")), 'textfield accepts backspace');
-    ok($app->update(0.1, Event::key_press("\n")), 'enter commits active textfield');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter activates textfield');
+    ok($app->update(0.1, ZTUI::Event::key_press('a')), 'active textfield accepts printable input');
+    ok($app->update(0.1, ZTUI::Event::key_press('b')), 'active textfield accepts subsequent printable input');
+    ok($app->update(0.1, ZTUI::Event::key_press("\x7f")), 'textfield accepts backspace');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter commits active textfield');
 
     is($value, 'seeda', 'textfield commit writes draft buffer into bound scalar');
     is_deeply(\@changes, ['seeda'], 'textfield emits change callback only on commit');
     is_deeply(\@submits, ['seeda'], 'textfield emits submit callback on commit');
     is_deeply(\@cancels, [], 'textfield has not cancelled yet');
 
-    ok($app->update(0.1, Event::key_press("\n")), 'enter re-activates textfield');
-    ok($app->update(0.1, Event::key_press('z')), 'active textfield appends new draft content');
-    ok($app->update(0.1, Event::key_press("\e")), 'esc cancels active textfield');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter re-activates textfield');
+    ok($app->update(0.1, ZTUI::Event::key_press('z')), 'active textfield appends new draft content');
+    ok($app->update(0.1, ZTUI::Event::key_press("\e")), 'esc cancels active textfield');
 
     is($value, 'seeda', 'cancel drops draft and preserves committed value');
     is_deeply(\@cancels, ['seeda'], 'textfield emits cancel callback with preserved bound value');
@@ -451,10 +452,10 @@ subtest 'TextField supports regex validation before commit' => sub {
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press("\n")), 'enter activates textfield');
-    ok($app->update(0.1, Event::key_press('a')), 'valid draft input is accepted');
-    ok($app->update(0.1, Event::key_press('b')), 'second valid draft input is accepted');
-    ok($app->update(0.1, Event::key_press("\n")), 'enter commits validated draft');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter activates textfield');
+    ok($app->update(0.1, ZTUI::Event::key_press('a')), 'valid draft input is accepted');
+    ok($app->update(0.1, ZTUI::Event::key_press('b')), 'second valid draft input is accepted');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter commits validated draft');
 
     is($value, 'ab', 'validated value is committed');
     is_deeply(\@changes, ['ab'], 'change callback runs when validation succeeds');
@@ -479,13 +480,13 @@ subtest 'TextField blocks invalid regex candidates and preserves draft editing s
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press("\n")), 'enter activates textfield');
-    ok($app->update(0.1, Event::key_press('a')), 'invalid character appended in draft');
-    ok($app->update(0.1, Event::key_press("\n")), 'invalid candidate blocks commit');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter activates textfield');
+    ok($app->update(0.1, ZTUI::Event::key_press('a')), 'invalid character appended in draft');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'invalid candidate blocks commit');
 
-    ok($app->update(0.1, Event::key_press("\x7f")), 'invalid draft can still backspace while edit mode is retained');
-    ok($app->update(0.1, Event::key_press('1')), 'valid char added after failed commit');
-    ok($app->update(0.1, Event::key_press("\n")), 'valid candidate commits after correction');
+    ok($app->update(0.1, ZTUI::Event::key_press("\x7f")), 'invalid draft can still backspace while edit mode is retained');
+    ok($app->update(0.1, ZTUI::Event::key_press('1')), 'valid char added after failed commit');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'valid candidate commits after correction');
 
     is($value, '1', 'field remains committed only after valid draft');
     is_deeply(\@changes, ['1'], 'change callback does not run for invalid draft');
@@ -494,7 +495,7 @@ subtest 'TextField blocks invalid regex candidates and preserves draft editing s
 };
 
 subtest 'TextField uses validator callbacks and on_invalid reporting' => sub {
-    my $value = 'init';
+    my $value = '';
     my $invalid_message;
     my $calls = 0;
     my @changes;
@@ -515,13 +516,13 @@ subtest 'TextField uses validator callbacks and on_invalid reporting' => sub {
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press("\n")), 'enter activates textfield');
-    ok($app->update(0.1, Event::key_press('x')), 'invalid draft for callback validator');
-    ok($app->update(0.1, Event::key_press("\n")), 'callback validator blocks commit');
-    ok($app->update(0.1, Event::key_press("\x7f")), 'invalid draft is editable');
-    ok($app->update(0.1, Event::key_press('o')), 'validator test char');
-    ok($app->update(0.1, Event::key_press('k')), 'validator test char');
-    ok($app->update(0.1, Event::key_press("\n")), 'valid callback candidate commits');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter activates textfield');
+    ok($app->update(0.1, ZTUI::Event::key_press('x')), 'invalid draft for callback validator');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'callback validator blocks commit');
+    ok($app->update(0.1, ZTUI::Event::key_press("\x7f")), 'invalid draft is editable');
+    ok($app->update(0.1, ZTUI::Event::key_press('o')), 'validator test char');
+    ok($app->update(0.1, ZTUI::Event::key_press('k')), 'validator test char');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'valid callback candidate commits');
 
     is($calls, 2, 'validator callback is invoked on each commit attempt');
     is($value, 'ok', 'callback validator allows a valid commit');
@@ -542,7 +543,7 @@ subtest 'TextField -validate requires regex or coderef' => sub {
                     -margin => 0;
             } -margin => 0;
         } -state => {};
-        $app->update(0.1, Event::key_press("\n"));
+        $app->update(0.1, ZTUI::Event::key_press("\n"));
     } qr/TextField -validate must be a coderef or regex/;
 };
 
@@ -571,14 +572,14 @@ subtest 'List keeps j/k in local domain and J exits to sibling branch' => sub {
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press('j')), 'list consumes local down navigation');
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'list consumes local down navigation');
     is($selected, 1, 'list selection moves inside list');
 
-    ok($app->update(0.1, Event::key_press(' ')), 'list activation handled');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'list activation handled');
     is_deeply(\@activated, [[1, 'Two']], 'list activation reports selected item');
 
-    ok($app->update(0.1, Event::key_press('J')), 'exit navigation moves to sibling branch');
-    ok($app->update(0.1, Event::key_press(' ')), 'button activation handled after focus move');
+    ok($app->update(0.1, ZTUI::Event::key_press('J')), 'exit navigation moves to sibling branch');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'button activation handled after focus move');
 
     my $renderer = mk_renderer(8, 30);
     $app->render($renderer);
@@ -602,7 +603,7 @@ subtest 'TextViewport scrolls locally without leaving focus domain' => sub {
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press('j')), 'viewport consumes local down scroll');
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'viewport consumes local down scroll');
     is($scroll, 1, 'viewport scroll offset advances');
 
     my $renderer = mk_renderer(8, 20);
@@ -633,7 +634,7 @@ subtest 'TextViewport yields j navigation when already at scroll boundary' => su
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press('j')), 'boundary j falls through to sibling navigation');
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'boundary j falls through to sibling navigation');
 
     my $renderer = mk_renderer(10, 20);
     $app->render($renderer);
@@ -643,7 +644,7 @@ subtest 'TextViewport yields j navigation when already at scroll boundary' => su
         'button becomes focused when viewport cannot scroll further',
     );
 
-    ok($app->update(0.1, Event::key_press(' ')), 'button receives activation after boundary navigation');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'button receives activation after boundary navigation');
     is($result, 'run', 'focused button callback fires after boundary navigation');
 };
 
@@ -668,14 +669,14 @@ subtest 'FieldList supports local field navigation and editing' => sub {
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press("\n")), 'enter activates selected text field');
-    ok($app->update(0.1, Event::key_press('x')), 'active field accepts draft edits');
-    ok($app->update(0.1, Event::key_press("\n")), 'enter commits text field draft');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter activates selected text field');
+    ok($app->update(0.1, ZTUI::Event::key_press('x')), 'active field accepts draft edits');
+    ok($app->update(0.1, ZTUI::Event::key_press("\n")), 'enter commits text field draft');
     is($name, 'Adax', 'field list commits edited text value');
 
-    ok($app->update(0.1, Event::key_press('j')), 'j moves to next field');
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'j moves to next field');
     is($selected, 1, 'field list updates selected field index');
-    ok($app->update(0.1, Event::key_press(' ')), 'space toggles selected toggle field');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'space toggles selected toggle field');
     is($debug, 0, 'field list toggles selected toggle value');
 
     my $renderer = mk_renderer(8, 40);
@@ -711,8 +712,8 @@ subtest 'exit navigation moves from list container to button row sibling' => sub
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press('J')), 'uppercase exit leaves list domain');
-    ok($app->update(0.1, Event::key_press(' ')), 'button row receives focus after exit');
+    ok($app->update(0.1, ZTUI::Event::key_press('J')), 'uppercase exit leaves list domain');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'button row receives focus after exit');
     is($result, 'ok', 'exit navigation lands on first button-row descendant');
 };
 
@@ -752,8 +753,8 @@ subtest 'mixed dialog exit navigation moves between pane containers' => sub {
         } -margin => 0;
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press('j')), 'local navigation stays inside left pane');
-    ok($app->update(0.1, Event::key_press('J')), 'exit navigation jumps to right pane');
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'local navigation stays inside left pane');
+    ok($app->update(0.1, ZTUI::Event::key_press('J')), 'exit navigation jumps to right pane');
 
     my $renderer = mk_renderer(10, 40);
     $app->render($renderer);
@@ -778,10 +779,10 @@ subtest 'custom InputRoot keymap overrides default navigation bindings' => sub {
           };
     } -state => {};
 
-    ok($app->update(0.1, Event::key_press('l')), 'root keymap override moves focus forward');
-    ok($app->update(0.1, Event::key_press(' ')), 'overridden navigation still preserves activation dispatch');
+    ok($app->update(0.1, ZTUI::Event::key_press('l')), 'root keymap override moves focus forward');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'overridden navigation still preserves activation dispatch');
     is($result, 'no', 'custom keymap replaced default local navigation');
-    ok($app->update(0.1, Event::key_press('j')), 'unbound default key falls through without quitting');
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'unbound default key falls through without quitting');
 };
 
 subtest 'App lifecycle validates callbacks and runs setup once' => sub {

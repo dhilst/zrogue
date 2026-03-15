@@ -1,13 +1,12 @@
-package TML;
+package ZTUI::TML;
 use v5.36;
 use utf8;
 
 use Carp;
 use Exporter qw(import);
 
-use lib ".";
-use Event;
-use Matrix3;
+use ZTUI::Event;
+use ZTUI::Matrix3;
 
 our @EXPORT_OK = qw(
     App
@@ -94,7 +93,7 @@ sub App :prototype(&;@) {
         if defined $BUILD_APP;
 
     my $opts = _norm_opts(@args);
-    my $app = TML::Runtime::App->_new($opts);
+    my $app = ZTUI::TML::Runtime::App->_new($opts);
 
     my $root = {
         type => 'Layer',
@@ -205,7 +204,7 @@ sub OnUpdate :prototype(&) {
     return;
 }
 
-package TML::Runtime::App {
+package ZTUI::TML::Runtime::App {
     use v5.36;
     use Carp;
     use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
@@ -548,8 +547,8 @@ package TML::Runtime::App {
         confess "run requires a theme"
             unless defined $theme;
 
-        require GameLoop;
-        my $loop = GameLoop::new($theme, $self);
+        require ZTUI::GameLoop;
+        my $loop = ZTUI::GameLoop::new($theme, $self);
         my $runtime_info = {
             theme => $theme,
             cols => $loop->{term}->cols,
@@ -595,7 +594,7 @@ package TML::Runtime::App {
     }
 
     sub _is_disabled_node($self, $node) {
-        my $disabled = TML::_resolve($self, undef, $node, $node->{props}{disabled} // 0);
+        my $disabled = ZTUI::TML::_resolve($self, undef, $node, $node->{props}{disabled} // 0);
         return $disabled ? 1 : 0;
     }
 
@@ -898,7 +897,7 @@ package TML::Runtime::App {
     }
 
     sub _widget_label($self, $renderer, $node, $default = '') {
-        return TML::_resolve($self, $renderer, $node, $node->{props}{label} // $default);
+        return ZTUI::TML::_resolve($self, $renderer, $node, $node->{props}{label} // $default);
     }
 
     sub _arrayref_prop($self, $node, $prop_name, $label) {
@@ -1072,7 +1071,7 @@ package TML::Runtime::App {
         my $width = $self->_textfield_inner_width($renderer, $node, $parent_w);
         my $cursor_pos = length($text);
         $cursor_pos = $width - 1 if $cursor_pos >= $width;
-        my $show_cursor = TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0)
+        my $show_cursor = ZTUI::TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0)
             && $self->_textfield_is_active($node);
 
         my $visible = substr($text, 0, $width);
@@ -1202,7 +1201,7 @@ package TML::Runtime::App {
             my $lines_ref = $self->_arrayref_prop($node, 'lines_ref', 'TextViewport');
             return [ map { defined($_) ? "$_" : '' } @$lines_ref ];
         }
-        my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
+        my $text = ZTUI::TML::_resolve($self, $renderer, $node, $props->{text} // '');
         return [ split /\n/, "$text", -1 ];
     }
 
@@ -1386,7 +1385,7 @@ package TML::Runtime::App {
 
     sub _fieldlist_row_specs($self, $renderer, $node, $parent_w = undef, $parent_h = undef) {
         my ($fields, $selected_ref) = $self->_fieldlist_normalize_selection($node);
-        my $focused = TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0);
+        my $focused = ZTUI::TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0);
         my $active = $self->_fieldlist_is_active($node);
         my $buffer_ref = $self->_fieldlist_buffer_ref($node);
         my $label_w = 0;
@@ -1466,16 +1465,16 @@ package TML::Runtime::App {
     }
 
     sub _widget_material($self, $renderer, $node) {
-        my $focused = TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0);
+        my $focused = ZTUI::TML::_resolve($self, $renderer, $node, $node->{props}{focused} // 0);
         my $disabled = $self->_is_disabled_node($node);
         my $props = $node->{props};
-        return TML::_resolve($self, $renderer, $node, $props->{disabled_material})
+        return ZTUI::TML::_resolve($self, $renderer, $node, $props->{disabled_material})
             if $disabled && exists $props->{disabled_material};
-        return TML::_resolve($self, $renderer, $node, $props->{active_material})
+        return ZTUI::TML::_resolve($self, $renderer, $node, $props->{active_material})
             if ($node->{type} // '') eq 'TextField' && $self->_textfield_is_active($node) && exists $props->{active_material};
-        return TML::_resolve($self, $renderer, $node, $props->{focused_material})
+        return ZTUI::TML::_resolve($self, $renderer, $node, $props->{focused_material})
             if $focused && exists $props->{focused_material};
-        return TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+        return ZTUI::TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
     }
 
     sub _widget_focus_overlay($self, $node, $ctx) {
@@ -1607,7 +1606,7 @@ package TML::Runtime::App {
     }
 
     sub _dispatch_interactive_event($self, $event) {
-        return 0 unless $event->type eq Event::Type::KEY_PRESS;
+        return 0 unless $event->type eq ZTUI::Event::Type::KEY_PRESS;
 
         my $ctx = $self->_interactive_context();
         return 0 unless defined $ctx;
@@ -1854,8 +1853,8 @@ package TML::Runtime::App {
 
         for my $child (@$children) {
             my $props = $child->{props};
-            my $cx = TML::_resolve_int($self, $renderer, $child, $props->{x}, 0);
-            my $cy = TML::_resolve_int($self, $renderer, $child, $props->{y}, 0);
+            my $cx = ZTUI::TML::_resolve_int($self, $renderer, $child, $props->{x}, 0);
+            my $cy = ZTUI::TML::_resolve_int($self, $renderer, $child, $props->{y}, 0);
             my ($cw, $ch) = $self->_node_dimensions($renderer, $child, $parent_w, $parent_h);
 
             my $col_end = $cx + $cw;
@@ -1871,7 +1870,7 @@ package TML::Runtime::App {
 
     sub _resolve_length($self, $renderer, $node, $value, $parent_len, $label, $default = undef) {
         my $resolved = defined($value)
-            ? TML::_resolve($self, $renderer, $node, $value)
+            ? ZTUI::TML::_resolve($self, $renderer, $node, $value)
             : $default;
         return undef unless defined $resolved;
 
@@ -1899,13 +1898,13 @@ package TML::Runtime::App {
             : (1, 0, 1, 1);
 
         my $margin = exists $props->{margin}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{margin}, 0)
+            ? ZTUI::TML::_resolve_int($self, $renderer, $node, $props->{margin}, 0)
             : undef;
         my $margin_x = exists $props->{margin_x}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{margin_x}, defined($margin) ? $margin : 0)
+            ? ZTUI::TML::_resolve_int($self, $renderer, $node, $props->{margin_x}, defined($margin) ? $margin : 0)
             : undef;
         my $margin_y = exists $props->{margin_y}
-            ? TML::_resolve_int($self, $renderer, $node, $props->{margin_y}, defined($margin) ? $margin : 0)
+            ? ZTUI::TML::_resolve_int($self, $renderer, $node, $props->{margin_y}, defined($margin) ? $margin : 0)
             : undef;
 
         my $left = defined($margin_x) ? $margin_x : defined($margin) ? $margin : $default_left;
@@ -1938,7 +1937,7 @@ package TML::Runtime::App {
     }
 
     sub _text_overflow($self, $renderer, $node) {
-        my $overflow = TML::_resolve($self, $renderer, $node, $node->{props}{overflow} // 'wrap');
+        my $overflow = ZTUI::TML::_resolve($self, $renderer, $node, $node->{props}{overflow} // 'wrap');
         $overflow = lc($overflow // 'wrap');
         confess "text overflow must be wrap or clip"
             unless $overflow eq 'wrap' || $overflow eq 'clip';
@@ -1957,7 +1956,7 @@ package TML::Runtime::App {
 
     sub _text_lines($self, $renderer, $node, $parent_w = undef) {
         my $props = $node->{props};
-        my $text = TML::_resolve($self, $renderer, $node, $props->{text} // '');
+        my $text = ZTUI::TML::_resolve($self, $renderer, $node, $props->{text} // '');
         my $string = "$text";
         my $overflow = $self->_text_overflow($renderer, $node);
         my $wrap_width = $self->_text_wrap_width($renderer, $node, $parent_w);
@@ -2002,7 +2001,7 @@ package TML::Runtime::App {
 
         my $props = $node->{props};
         my $default_gap = ($node->{type} // '') eq 'ButtonRow' ? 1 : 0;
-        my $gap = TML::_resolve_int($self, $renderer, $node, $props->{gap}, $default_gap);
+        my $gap = ZTUI::TML::_resolve_int($self, $renderer, $node, $props->{gap}, $default_gap);
         $gap = 0 if $gap < 0;
 
         my $box_w = exists $props->{width}
@@ -2043,10 +2042,10 @@ package TML::Runtime::App {
         $box_w = 0 if $box_w < 0;
         $box_h = 0 if $box_h < 0;
 
-        my $align = TML::_resolve($self, $renderer, $node, $props->{align});
-        my $main_align = TML::_resolve($self, $renderer, $node,
+        my $align = ZTUI::TML::_resolve($self, $renderer, $node, $props->{align});
+        my $main_align = ZTUI::TML::_resolve($self, $renderer, $node,
             exists($props->{main_align}) ? $props->{main_align} : $align);
-        my $cross_align = TML::_resolve($self, $renderer, $node,
+        my $cross_align = ZTUI::TML::_resolve($self, $renderer, $node,
             exists($props->{cross_align}) ? $props->{cross_align} : $align);
 
         my ($main_axis, $cross_axis, $default_main, $default_cross) =
@@ -2130,10 +2129,10 @@ package TML::Runtime::App {
         my $inner_w = $box_w - 2;
         my $inner_h = $box_h - 2;
 
-        my $align = TML::_resolve($self, $renderer, $node, $props->{align});
-        my $h_align = TML::_resolve($self, $renderer, $node,
+        my $align = ZTUI::TML::_resolve($self, $renderer, $node, $props->{align});
+        my $h_align = ZTUI::TML::_resolve($self, $renderer, $node,
             exists($props->{h_align}) ? $props->{h_align} : $align);
-        my $v_align = TML::_resolve($self, $renderer, $node,
+        my $v_align = ZTUI::TML::_resolve($self, $renderer, $node,
             exists($props->{v_align}) ? $props->{v_align} : $align);
 
         my $content_x = 1 + $self->_align_offset(
@@ -2280,7 +2279,7 @@ package TML::Runtime::App {
         my $h = $self->_resolve_length($renderer, $node, $props->{height}, $parent_h, 'height', 0);
         return if $w <= 0 || $h <= 0;
 
-        my $material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+        my $material = ZTUI::TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
         $renderer->render_rect($local, $w, $h, -material => $material);
     }
 
@@ -2291,16 +2290,16 @@ package TML::Runtime::App {
         );
         return if $w <= 0 || $h <= 0;
 
-        my $material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
-        my $border_material = TML::_resolve($self, $renderer, $node, $props->{border_material} // 'DEFAULT');
+        my $material = ZTUI::TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+        my $border_material = ZTUI::TML::_resolve($self, $renderer, $node, $props->{border_material} // 'DEFAULT');
 
         if ($w > 2 && $h > 2) {
-            my $inner_origin = $local + Matrix3::Vec::from_xy(1, -1);
+            my $inner_origin = $local + ZTUI::Matrix3::Vec::from_xy(1, -1);
             $renderer->render_rect($inner_origin, $w - 2, $h - 2, -material => $material);
         }
         $renderer->render_border($local, $w, $h, -border_material => $border_material);
 
-        my $content_base = $local + Matrix3::Vec::from_xy($content_x, -$content_y);
+        my $content_base = $local + ZTUI::Matrix3::Vec::from_xy($content_x, -$content_y);
         my $inner_w = $w - 2;
         my $inner_h = $h - 2;
         for my $child ($node->{children}->@*) {
@@ -2310,11 +2309,11 @@ package TML::Runtime::App {
 
     sub _render_node($self, $renderer, $node, $base, $parent_w = undef, $parent_h = undef) {
         my $props = $node->{props};
-        my $x = TML::_resolve_int($self, $renderer, $node, $props->{x}, 0);
-        my $y = TML::_resolve_int($self, $renderer, $node, $props->{y}, 0);
-        my $local = $base + Matrix3::Vec::from_xy($x, $y);
+        my $x = ZTUI::TML::_resolve_int($self, $renderer, $node, $props->{x}, 0);
+        my $y = ZTUI::TML::_resolve_int($self, $renderer, $node, $props->{y}, 0);
+        my $local = $base + ZTUI::Matrix3::Vec::from_xy($x, $y);
         my ($margin_left, $margin_top, $margin_right, $margin_bottom) = $self->_node_margins($renderer, $node);
-        my $content_local = $local + Matrix3::Vec::from_xy($margin_left, -$margin_top);
+        my $content_local = $local + ZTUI::Matrix3::Vec::from_xy($margin_left, -$margin_top);
         my $inner_parent_w = $parent_w;
         my $inner_parent_h = $parent_h;
         if (defined $inner_parent_w) {
@@ -2330,12 +2329,12 @@ package TML::Runtime::App {
             $self->_render_rect($renderer, $node, $content_local, $inner_parent_w, $inner_parent_h);
         } elsif ($node->{type} eq 'Text') {
             my $lines = $self->_text_lines($renderer, $node, $inner_parent_w);
-            my $material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
-            my $justify = TML::_resolve($self, $renderer, $node, $props->{justify});
+            my $material = ZTUI::TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+            my $justify = ZTUI::TML::_resolve($self, $renderer, $node, $props->{justify});
             my %opts = (-material => $material);
             $opts{-justify} = $justify if defined $justify;
             for my $row (0 .. $#$lines) {
-                my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
+                my $line_pos = $content_local + ZTUI::Matrix3::Vec::from_xy(0, -$row);
                 $renderer->render_text($line_pos, $lines->[$row], %opts);
             }
         } elsif ($node->{type} eq 'Button') {
@@ -2360,14 +2359,14 @@ package TML::Runtime::App {
             my $ctx = $self->_interactive_context();
             my $focused = $self->_widget_focus_overlay($node, $ctx);
             my ($rows, $w, $h) = $self->_list_visible_rows($renderer, $node, $inner_parent_w, $inner_parent_h);
-            my $base_material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
-            my $selected_material = TML::_resolve($self, $renderer, $node,
+            my $base_material = ZTUI::TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+            my $selected_material = ZTUI::TML::_resolve($self, $renderer, $node,
                 $focused
                 ? ($props->{focused_material} // $props->{selected_material} // $base_material)
                 : ($props->{selected_material} // $base_material)
             );
             for my $row (0 .. $#$rows) {
-                my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
+                my $line_pos = $content_local + ZTUI::Matrix3::Vec::from_xy(0, -$row);
                 my $material = $rows->[$row]{selected} ? $selected_material : $base_material;
                 $renderer->render_text($line_pos, $rows->[$row]{text}, -material => $material);
             }
@@ -2377,18 +2376,18 @@ package TML::Runtime::App {
             my ($visible, $w, $h) = $self->_viewport_visible_lines($renderer, $node, $inner_parent_w, $inner_parent_h);
             my $material = $self->_widget_material($renderer, $node);
             for my $row (0 .. $#$visible) {
-                my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
+                my $line_pos = $content_local + ZTUI::Matrix3::Vec::from_xy(0, -$row);
                 $renderer->render_text($line_pos, $visible->[$row], -material => $material);
             }
         } elsif ($node->{type} eq 'FieldList') {
             my $ctx = $self->_interactive_context();
             local $node->{props}{focused} = $self->_widget_focus_overlay($node, $ctx);
             my ($rows, $w, $h) = $self->_fieldlist_row_specs($renderer, $node, $inner_parent_w, $inner_parent_h);
-            my $base_material = TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
-            my $focused_material = TML::_resolve($self, $renderer, $node, $props->{focused_material} // $base_material);
-            my $active_material = TML::_resolve($self, $renderer, $node, $props->{active_material} // $focused_material);
+            my $base_material = ZTUI::TML::_resolve($self, $renderer, $node, $props->{material} // 'DEFAULT');
+            my $focused_material = ZTUI::TML::_resolve($self, $renderer, $node, $props->{focused_material} // $base_material);
+            my $active_material = ZTUI::TML::_resolve($self, $renderer, $node, $props->{active_material} // $focused_material);
             for my $row (0 .. $#$rows) {
-                my $line_pos = $content_local + Matrix3::Vec::from_xy(0, -$row);
+                my $line_pos = $content_local + ZTUI::Matrix3::Vec::from_xy(0, -$row);
                 my $material = $rows->[$row]{active}
                     ? $active_material
                     : $rows->[$row]{selected}
@@ -2403,7 +2402,7 @@ package TML::Runtime::App {
                 $renderer, $node, $container_type, $inner_parent_w, $inner_parent_h
             );
             for my $placement (@$placements) {
-                my $child_pos = $content_local + Matrix3::Vec::from_xy($placement->{x}, -$placement->{y});
+                my $child_pos = $content_local + ZTUI::Matrix3::Vec::from_xy($placement->{x}, -$placement->{y});
                 $self->_render_node($renderer, $placement->{child}, $child_pos, $w, $h);
             }
             return;
@@ -2443,7 +2442,7 @@ package TML::Runtime::App {
         }
 
         for my $event (@events) {
-            next unless $event->type eq Event::Type::KEY_PRESS;
+            next unless $event->type eq ZTUI::Event::Type::KEY_PRESS;
             my $handled = $self->_dispatch_interactive_event($event);
             next if $handled;
             my $ch = $event->payload->char;
@@ -2463,7 +2462,7 @@ package TML::Runtime::App {
     }
 
     sub render($self, $renderer) {
-        my $origin = Matrix3::Vec::from_xy(0, 0);
+        my $origin = ZTUI::Matrix3::Vec::from_xy(0, 0);
         my $avail_w = $renderer->can('width') ? $renderer->width : undef;
         my $avail_h = $renderer->can('height') ? $renderer->height : undef;
         $self->_refresh_layout_caches($avail_w, $avail_h);
@@ -2483,7 +2482,7 @@ TML - Block-based Perl EDSL for terminal widget trees
 
 =head1 SYNOPSIS
 
-    use TML qw(App Layer InputRoot VBox BBox Rect Text Button OnKey OnUpdate);
+    use ZTUI::TML qw(App Layer InputRoot VBox BBox Rect Text Button OnKey OnUpdate);
     use InputTheme;
 
     my $ui = App {
@@ -2567,7 +2566,7 @@ All functions are exported on demand via C<@EXPORT_OK>:
 
 =head2 App BLOCK, %opts
 
-Root builder. Returns a C<TML::Runtime::App> object. The returned object can
+Root builder. Returns a C<ZTUI::TML::Runtime::App> object. The returned object can
 still be driven manually through C<GameLoop>, but it now also acts as a
 runnable lifecycle root through C<< $app->run($theme) >>.
 
@@ -2658,7 +2657,7 @@ Registers a key handler:
 
     OnKey 'q' => sub ($app, $event) { ... };
 
-Called for C<Event::Type::KEY_PRESS> events whose character matches C<CHAR>.
+Called for C<ZTUI::Event::Type::KEY_PRESS> events whose character matches C<CHAR>.
 
 =head2 OnUpdate BLOCK
 
@@ -2852,7 +2851,7 @@ Content alignment inside the inner area (after subtracting border thickness).
 
 =head1 RUNTIME OBJECT
 
-C<App { ... }> returns C<TML::Runtime::App> with:
+C<App { ... }> returns C<ZTUI::TML::Runtime::App> with:
 
 =over 4
 

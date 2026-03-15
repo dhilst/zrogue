@@ -1,0 +1,12 @@
+^\.
+^\.git
+^\.cpan
+^\.precomp
+^nytprof
+^\.mypy_cache
+^_build
+^blib
+^Makefile$
+^Makefile\.old$
+^MANIFEST\.bak$
+^\.DS_Store$

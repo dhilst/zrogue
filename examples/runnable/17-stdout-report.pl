@@ -3,11 +3,11 @@ use utf8;
 
 use Carp qw(confess);
 use FindBin qw($Bin);
-use lib "$Bin/../..";
+use lib "$Bin/../../lib";
 use lib $Bin;
 
 use RunnableSupport qw(theme frame_update sleep_step progress_message format_exit_report parse_cli_options write_output_file);
-use TML qw(App Layer InputRoot VBox BBox Rect Text Button OnKey OnUpdate);
+use ZTUI::TML qw(App Layer InputRoot VBox BBox Rect Text Button OnKey OnUpdate);
 
 my $cli = parse_cli_options();
 my $output_path = $cli->{output_path};

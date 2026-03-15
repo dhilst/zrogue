@@ -1,4 +1,4 @@
-package BorderMapper;
+package ZTUI::BorderMapper;
 
 use v5.36;
 use utf8;
@@ -6,9 +6,8 @@ no autovivification;
 use Carp qw(confess);
 use overload '&{}' => \&as_coderef, fallback => 1;
 
-use lib ".";
-use TerminalBorderStyle;
-use Utils qw(getters);
+use ZTUI::TerminalBorderStyle;
+use ZTUI::Utils qw(getters);
 
 getters qw(mapper);
 
@@ -23,11 +22,11 @@ sub from_callback($mapper) {
 sub lookup($self, $material) {
     my $style = $self->{mapper}->($material);
     return undef if !defined $style;
-    return $style if ref($style) eq 'TerminalBorderStyle';
+    return $style if ref($style) eq 'ZTUI::TerminalBorderStyle';
 
     my $border = _normalize_border($style);
     return undef unless defined $border;
-    return TerminalBorderStyle::new(-border => $border);
+    return ZTUI::TerminalBorderStyle::new(-border => $border);
 }
 
 sub style($self, $material) {

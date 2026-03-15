@@ -1,4 +1,4 @@
-package MaterialMapper;
+package ZTUI::MaterialMapper;
 
 use v5.36;
 use utf8;
@@ -6,9 +6,8 @@ no autovivification;
 use Carp qw(confess);
 use overload '&{}' => \&as_coderef, fallback => 1;
 
-use lib ".";
-use TerminalStyle;
-use Utils qw(getters);
+use ZTUI::TerminalStyle;
+use ZTUI::Utils qw(getters);
 
 getters qw(mapper);
 
@@ -23,10 +22,10 @@ sub from_callback($mapper) {
 sub lookup($self, $material) {
     my $style = $self->{mapper}->($material);
     return undef if !defined $style;
-    return $style if ref($style) eq 'TerminalStyle';
+    return $style if ref($style) eq 'ZTUI::TerminalStyle';
     return undef unless ref($style) eq 'HASH';
     return undef unless _valid_style_hash($style);
-    return TerminalStyle::new($style->%*);
+    return ZTUI::TerminalStyle::new($style->%*);
 }
 
 sub style($self, $material) {
@@ -81,11 +80,10 @@ MaterialMapper
 
 =head1 SYNOPSIS
 
-    use lib ".";
-    use SGR qw(:attrs):
-    use MaterialMapper;
+    use ZTUI::SGR qw(:attrs):
+    use ZTUI::MaterialMapper;
 
-    my $mat = MaterialMapper::from_callback(sub ($material) {
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($material) {
         return { -fg => 0xff00ff } if $material eq 'MAGENTA';
         return { -bg => 0x000000, -attrs => ATTR_BOLD } if $material eq 'HIGHLIGHT';
     });

@@ -1,4 +1,4 @@
-package TerminalBorderStyle;
+package ZTUI::TerminalBorderStyle;
 
 use v5.36;
 use utf8;
@@ -73,9 +73,9 @@ TerminalBorderStyle
 
 =head1 SYNOPSIS
 
-    use TerminalBorderStyle;
+    use ZTUI::TerminalBorderStyle;
 
-    my $style = TerminalBorderStyle::new(
+    my $style = ZTUI::TerminalBorderStyle::new(
         -fg => 0xffffff,
         -bg => 0x000000,
         -attrs => 0,

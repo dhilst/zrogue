@@ -1,7 +1,7 @@
 use v5.36;
 use utf8;
 
-package Matrix3::Vec {
+package ZTUI::Matrix3::Vec {
     use Carp;
 
     use overload
@@ -57,21 +57,20 @@ package Matrix3::Vec {
     }
 
     sub copy($self) {
-        Matrix3::Vec::from_xy($self->@*);
+        ZTUI::Matrix3::Vec::from_xy($self->@*);
     }
 
     sub x($self) { $self->[0] }
     sub y($self) { $self->[1] }
 }
 
-package Matrix3;
+package ZTUI::Matrix3;
 use v5.36;
 use utf8;
 use Exporter qw(import);
 use Carp;
 
-use lib ".";
-use Utils qw(getters);
+use ZTUI::Utils qw(getters);
 
 our @EXPORT_OK = qw(
     $ID
@@ -110,7 +109,7 @@ sub from_rows(
 
 sub copy($self) {
     my ($a, $b, $c, $d, $dx, $dy) = $self->@*;
-    Matrix3::from_rows(
+    ZTUI::Matrix3::from_rows(
         $a, $b, $dx,
         $c, $d, $dy
     );
@@ -151,44 +150,44 @@ sub mul_mat($self, $other, $swap = 0) {
 
 
 sub translate($dx, $dy) {
-    Matrix3::from_rows(
+    ZTUI::Matrix3::from_rows(
         1, 0, $dx,
         0, 1, $dy
     );
 }
 
-our $ID = Matrix3::from_rows(
+our $ID = ZTUI::Matrix3::from_rows(
     1,  0,  0,
     0,  1,  0,
 );
 
 our $ROT0 = $ID;
 
-our $ROT90 = Matrix3::from_rows(
+our $ROT90 = ZTUI::Matrix3::from_rows(
     0, -1,  0,
     1,  0,  0,
 );
 
-our $ROT180 = Matrix3::from_rows(
+our $ROT180 = ZTUI::Matrix3::from_rows(
    -1,  0,  0,
     0, -1,  0,
 );
 
-our $ROT270 = Matrix3::from_rows(
+our $ROT270 = ZTUI::Matrix3::from_rows(
     0,  1,  0,
    -1,  0,  0,
 );
 
-our $NORTH = Matrix3::translate(0, 1);
-our $SOUTH = Matrix3::translate(0, -1);
-our $WEST  = Matrix3::translate(-1, 0);
-our $EAST  = Matrix3::translate(1, 0);
+our $NORTH = ZTUI::Matrix3::translate(0, 1);
+our $SOUTH = ZTUI::Matrix3::translate(0, -1);
+our $WEST  = ZTUI::Matrix3::translate(-1, 0);
+our $EAST  = ZTUI::Matrix3::translate(1, 0);
 
-our $REFLECT_X = Matrix3::from_rows(
+our $REFLECT_X = ZTUI::Matrix3::from_rows(
     1,  0,  0,
     0, -1,  0,
 );
-our $REFLECT_Y = Matrix3::from_rows(
+our $REFLECT_Y = ZTUI::Matrix3::from_rows(
     -1,  0, 0,
      0,  1, 0,
 );

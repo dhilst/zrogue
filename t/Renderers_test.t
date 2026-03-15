@@ -3,18 +3,19 @@ use Test::More;
 use Test::Exception;
 use Data::Dumper;
 
-use lib ".";
-use Buffer2D;
-use Matrix3 qw($ID);
-use Renderers;
-use TerminalStyle;
-use TerminalBorderStyle;
-use Theme;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::Buffer2D;
+use ZTUI::Matrix3 qw($ID);
+use ZTUI::Renderers;
+use ZTUI::TerminalStyle;
+use ZTUI::TerminalBorderStyle;
+use ZTUI::Theme;
 
 
 subtest 'single cell diff' => sub {
     # Back buffer holds the rendering frame
-    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = ZTUI::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
     $back->set(0, 0, [0,2,3]);
@@ -30,7 +31,7 @@ subtest 'single cell diff' => sub {
 
 subtest 'multiple independent updates' => sub {
     # Back buffer holds the rendering frame
-    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = ZTUI::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
     $back->set(0, 0, [1,0,0]);
@@ -49,7 +50,7 @@ subtest 'multiple independent updates' => sub {
 
 subtest 'last write wins' => sub {
     # Back buffer holds the rendering frame
-    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = ZTUI::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
     $back->set(1, 0, [1,1,1]);
@@ -68,7 +69,7 @@ subtest 'last write wins' => sub {
 
 subtest 'no-op update produces no diff' => sub {
     # Back buffer holds the rendering frame
-    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = ZTUI::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
     $back->set(1, 0, [0,0,0]);
@@ -84,7 +85,7 @@ subtest 'no-op update produces no diff' => sub {
 
 subtest 'set_multi and updated payload diff' => sub {
     # Back buffer holds the rendering frame
-    my $back = Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
+    my $back = ZTUI::Buffer2D::new("l3", 3, 4, [0,0,0], -autoclip => 0);
     # Front buffer holds what is in the screen
     my $front = $back->copy;
 
@@ -115,7 +116,7 @@ subtest 'set_multi and updated payload diff' => sub {
 
 subtest 'bounds checking and exceptions' => sub {
     my $H = 3, my $W = 4;
-    my $back = Buffer2D::new("l3", $H, $W, [0,0,0]);
+    my $back = ZTUI::Buffer2D::new("l3", $H, $W, [0,0,0]);
     dies_ok  { $back->set(5, 0, [1,1,1]) }      'set out of bounds dies';
     dies_ok  { $back->get(5, 0) }               'get out of bounds dies';
     lives_ok { $back->set(3, 0, [1,2,3]) }      'set at boundary lives';
@@ -128,7 +129,7 @@ subtest 'bounds checking and exceptions' => sub {
 };
 
 subtest 'partial updates works as expected' => sub {
-    my $back = Buffer2D::new("l3", 3, 4, [0,0,0]);
+    my $back = ZTUI::Buffer2D::new("l3", 3, 4, [0,0,0]);
 
     $back->set_multi(0, 0, [1,0,0], [1,0,0]); 
     is_deeply([ $back->get(0, 0) ], [1,0,0]);
@@ -149,7 +150,7 @@ subtest 'partial updates works as expected' => sub {
 
 subtest 'clip works as expected' => sub {
     my $H = 3, my $W = 4;
-    my $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    my $back = ZTUI::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
 
     is_deeply([ $back->clip( 0,  0,    1  ) ], [   0  ,    0  ,    1  ],  "no cliping = nop");
     is_deeply([ $back->clip(-1,  0,    1  ) ], [   0  ,    0  ,    0  ],  "negative col offscreen");
@@ -165,27 +166,27 @@ subtest 'clip works as expected' => sub {
 subtest 'autoclip off-screen writes are ignored' => sub {
     my $H = 3, my $W = 4;
 
-    my $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    my $back = ZTUI::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set(-1, 0, [1,1,1]);
     is_deeply([ $back->get(0, 0) ], [0,0,0], "offscreen left single ignored");
 
-    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = ZTUI::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set($W, 0, [1,1,1]);
     is_deeply([ $back->get($W - 1, 0) ], [0,0,0], "offscreen right single ignored");
 
-    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = ZTUI::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set(0, -1, [1,1,1]);
     is_deeply([ $back->get(0, 0) ], [0,0,0], "offscreen row above ignored");
 
-    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = ZTUI::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set(0, $H, [1,1,1]);
     is_deeply([ $back->get(0, $H - 1) ], [0,0,0], "offscreen row below ignored");
 
-    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = ZTUI::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set_multi($W - 1, 0, [3,3,3], [4,4,4]);
     is_deeply([ $back->get($W - 1, 0) ], [3,3,3], "right edge clip keeps visible");
 
-    $back = Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
+    $back = ZTUI::Buffer2D::new("l3", $H, $W, [0,0,0], -autoclip => 1);
     $back->set_multi(-3, 0, [5,5,5], [6,6,6]);
     is_deeply([ $back->get(0, 0) ], [0,0,0], "fully offscreen left ignored");
 };
@@ -291,29 +292,29 @@ sub cell($renderer, $col, $row) {
 sub build_renderer(%opts) {
     my $material_mapper = $opts{material_mapper};
     my $border_mapper = $opts{border_mapper};
-    my $theme = Theme::new(
+    my $theme = ZTUI::Theme::new(
         -material_mapper => $material_mapper,
         -border_mapper => $border_mapper,
     );
-    my $renderer = Renderers::DoubleBuffering::new($ID, 8, 12, $theme, ' ');
+    my $renderer = ZTUI::Renderers::DoubleBuffering::new($ID, 8, 12, $theme, ' ');
     $renderer->{term} = TestRenderTerm::new();
     return ($renderer, $theme);
 }
 
 subtest 'semantic render_text resolves material through theme' => sub {
     my $material_mapper = CountingMaterialMapper->new({
-        DEFAULT => TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
-        TITLE => TerminalStyle::new(-fg => 0x112233, -bg => 0x445566, -attrs => 3),
+        DEFAULT => ZTUI::TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
+        TITLE => ZTUI::TerminalStyle::new(-fg => 0x112233, -bg => 0x445566, -attrs => 3),
     }, {}, {});
     my $border_mapper = CountingBorderMapper->new({
-        DEFAULT => TerminalBorderStyle::new(),
+        DEFAULT => ZTUI::TerminalBorderStyle::new(),
     }, {}, {});
     my ($renderer) = build_renderer(
         material_mapper => $material_mapper,
         border_mapper => $border_mapper,
     );
 
-    $renderer->render_text(Matrix3::Vec::from_xy(1, 2), 'A', -material => 'TITLE');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(1, 2), 'A', -material => 'TITLE');
 
     is_deeply(cell($renderer, 1, 2), [ord('A'), 0x112233, 0x445566, 3], 'semantic text style resolved into buffer');
     is($material_mapper->calls_for('TITLE'), 1, 'material lookup happened once');
@@ -321,18 +322,18 @@ subtest 'semantic render_text resolves material through theme' => sub {
 
 subtest 'render_rect fills area using semantic material' => sub {
     my $material_mapper = CountingMaterialMapper->new({
-        DEFAULT => TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
-        PANEL => TerminalStyle::new(-fg => 10, -bg => 11, -attrs => 12),
+        DEFAULT => ZTUI::TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
+        PANEL => ZTUI::TerminalStyle::new(-fg => 10, -bg => 11, -attrs => 12),
     }, {}, {});
     my $border_mapper = CountingBorderMapper->new({
-        DEFAULT => TerminalBorderStyle::new(),
+        DEFAULT => ZTUI::TerminalBorderStyle::new(),
     }, {}, {});
     my ($renderer) = build_renderer(
         material_mapper => $material_mapper,
         border_mapper => $border_mapper,
     );
 
-    $renderer->render_rect(Matrix3::Vec::from_xy(2, 4), 3, 2, -material => 'PANEL');
+    $renderer->render_rect(ZTUI::Matrix3::Vec::from_xy(2, 4), 3, 2, -material => 'PANEL');
 
     is_deeply(cell($renderer, 2, 4), [ord(' '), 10, 11, 12], 'top-left fill cell rendered');
     is_deeply(cell($renderer, 4, 3), [ord(' '), 10, 11, 12], 'bottom-right fill cell rendered');
@@ -341,11 +342,11 @@ subtest 'render_rect fills area using semantic material' => sub {
 
 subtest 'render_border draws glyphs from TerminalBorderStyle' => sub {
     my $material_mapper = CountingMaterialMapper->new({
-        DEFAULT => TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
+        DEFAULT => ZTUI::TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
     }, {}, {});
     my $border_mapper = CountingBorderMapper->new({
-        DEFAULT => TerminalBorderStyle::new(),
-        FRAME => TerminalBorderStyle::new(
+        DEFAULT => ZTUI::TerminalBorderStyle::new(),
+        FRAME => ZTUI::TerminalBorderStyle::new(
             -fg => 1,
             -bg => 2,
             -attrs => 3,
@@ -357,7 +358,7 @@ subtest 'render_border draws glyphs from TerminalBorderStyle' => sub {
         border_mapper => $border_mapper,
     );
 
-    $renderer->render_border(Matrix3::Vec::from_xy(1, 4), 4, 3, -border_material => 'FRAME');
+    $renderer->render_border(ZTUI::Matrix3::Vec::from_xy(1, 4), 4, 3, -border_material => 'FRAME');
 
     is_deeply(cell($renderer, 1, 4), [ord('a'), 1, 2, 3], 'top-left border rendered');
     is_deeply(cell($renderer, 2, 4), [ord('b'), 1, 2, 3], 'top edge rendered');
@@ -366,83 +367,83 @@ subtest 'render_border draws glyphs from TerminalBorderStyle' => sub {
 
 subtest 'static uniform material cache is reused across calls' => sub {
     my $material_mapper = CountingMaterialMapper->new({
-        DEFAULT => TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
-        STATIC => TerminalStyle::new(-fg => 4, -bg => 5, -attrs => 6),
+        DEFAULT => ZTUI::TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
+        STATIC => ZTUI::TerminalStyle::new(-fg => 4, -bg => 5, -attrs => 6),
     }, {
         STATIC => 'STATIC_UNIFORM',
     }, {
         STATIC => sub ($dt, $x, $y, $material) { return 'STATIC'; },
     });
     my $border_mapper = CountingBorderMapper->new({
-        DEFAULT => TerminalBorderStyle::new(),
+        DEFAULT => ZTUI::TerminalBorderStyle::new(),
     }, {}, {});
     my ($renderer) = build_renderer(
         material_mapper => $material_mapper,
         border_mapper => $border_mapper,
     );
 
-    $renderer->render_text(Matrix3::Vec::from_xy(0, 0), 'A', -material => 'STATIC');
-    $renderer->render_text(Matrix3::Vec::from_xy(5, 5), 'B', -material => 'STATIC');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(0, 0), 'A', -material => 'STATIC');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(5, 5), 'B', -material => 'STATIC');
 
     is($material_mapper->calls_for('STATIC'), 1, 'static material lookup cached persistently');
 };
 
 subtest 'static cellwise material cache respects cache_key' => sub {
     my $material_mapper = CountingMaterialMapper->new({
-        DEFAULT => TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
-        GRID => TerminalStyle::new(-fg => 9, -bg => 8, -attrs => 7),
+        DEFAULT => ZTUI::TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
+        GRID => ZTUI::TerminalStyle::new(-fg => 9, -bg => 8, -attrs => 7),
     }, {
         GRID => 'STATIC_CELLWISE',
     }, {
         GRID => sub ($dt, $x, $y, $material) { return join ':', $material, $x, $y; },
     });
     my $border_mapper = CountingBorderMapper->new({
-        DEFAULT => TerminalBorderStyle::new(),
+        DEFAULT => ZTUI::TerminalBorderStyle::new(),
     }, {}, {});
     my ($renderer) = build_renderer(
         material_mapper => $material_mapper,
         border_mapper => $border_mapper,
     );
 
-    $renderer->render_text(Matrix3::Vec::from_xy(1, 1), 'A', -material => 'GRID');
-    $renderer->render_text(Matrix3::Vec::from_xy(1, 1), 'B', -material => 'GRID');
-    $renderer->render_text(Matrix3::Vec::from_xy(2, 1), 'C', -material => 'GRID');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(1, 1), 'A', -material => 'GRID');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(1, 1), 'B', -material => 'GRID');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(2, 1), 'C', -material => 'GRID');
 
     is($material_mapper->calls_for('GRID'), 2, 'cellwise cache key differentiates positions and reuses identical positions');
 };
 
 subtest 'dynamic uniform material cache resets after flush' => sub {
     my $material_mapper = CountingMaterialMapper->new({
-        DEFAULT => TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
-        PULSE => TerminalStyle::new(-fg => 3, -bg => 2, -attrs => 1),
+        DEFAULT => ZTUI::TerminalStyle::new(-fg => 7, -bg => 0, -attrs => 0),
+        PULSE => ZTUI::TerminalStyle::new(-fg => 3, -bg => 2, -attrs => 1),
     }, {
         PULSE => 'DYNAMIC_UNIFORM',
     }, {
         PULSE => sub ($dt, $x, $y, $material) { return join ':', $material, $dt; },
     });
     my $border_mapper = CountingBorderMapper->new({
-        DEFAULT => TerminalBorderStyle::new(),
+        DEFAULT => ZTUI::TerminalBorderStyle::new(),
     }, {}, {});
     my ($renderer) = build_renderer(
         material_mapper => $material_mapper,
         border_mapper => $border_mapper,
     );
 
-    $renderer->render_text(Matrix3::Vec::from_xy(1, 1), 'A', -material => 'PULSE');
-    $renderer->render_text(Matrix3::Vec::from_xy(2, 1), 'B', -material => 'PULSE');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(1, 1), 'A', -material => 'PULSE');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(2, 1), 'B', -material => 'PULSE');
     is($material_mapper->calls_for('PULSE'), 1, 'dynamic uniform cached within a frame');
 
     $renderer->flush;
-    $renderer->render_text(Matrix3::Vec::from_xy(3, 1), 'C', -material => 'PULSE');
+    $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(3, 1), 'C', -material => 'PULSE');
     is($material_mapper->calls_for('PULSE'), 2, 'dynamic uniform resolved again after frame boundary');
 };
 
 subtest 'missing semantic material falls back instead of dying' => sub {
     my $material_mapper = CountingMaterialMapper->new({
-        DEFAULT => TerminalStyle::new(-fg => 0xffffff, -bg => 0x000000, -attrs => 0),
+        DEFAULT => ZTUI::TerminalStyle::new(-fg => 0xffffff, -bg => 0x000000, -attrs => 0),
     }, {}, {});
     my $border_mapper = CountingBorderMapper->new({
-        DEFAULT => TerminalBorderStyle::new(),
+        DEFAULT => ZTUI::TerminalBorderStyle::new(),
     }, {}, {});
     my ($renderer) = build_renderer(
         material_mapper => $material_mapper,
@@ -450,7 +451,7 @@ subtest 'missing semantic material falls back instead of dying' => sub {
     );
 
     lives_ok {
-        $renderer->render_text(Matrix3::Vec::from_xy(0, 0), 'Z', -material => 'UNKNOWN');
+        $renderer->render_text(ZTUI::Matrix3::Vec::from_xy(0, 0), 'Z', -material => 'UNKNOWN');
     } 'missing material does not die';
     is_deeply(cell($renderer, 0, 0), [ord('Z'), 0xffffff, 0x000000, 0], 'fallback style is rendered');
 };

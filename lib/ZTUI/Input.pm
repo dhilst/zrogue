@@ -1,4 +1,4 @@
-package Input;
+package ZTUI::Input;
 use v5.36;
 
 use Carp;
@@ -6,10 +6,9 @@ use Errno qw(EAGAIN EWOULDBLOCK EINTR);
 use IO::Select;
 use POSIX qw(ICANON ECHO VMIN VTIME TCSANOW);
 
-use lib ".";
-use Event;
-use UTF8Buffer;
-use Utils qw(getters);
+use ZTUI::Event;
+use ZTUI::UTF8Buffer;
+use ZTUI::Utils qw(getters);
 
 getters qw(select termios orig fd utf8buf queue);
 
@@ -35,7 +34,7 @@ sub new() {
         orig    => $orig,
         fd      => $fd,
         queue   => [],
-        utf8buf => UTF8Buffer::new(),
+        utf8buf => ZTUI::UTF8Buffer::new(),
     }, __PACKAGE__;
 
     $self->enable_raw_mode;
@@ -68,7 +67,7 @@ sub _read_events($self) {
         last if $n == 0;
         push @chars, $self->{utf8buf}->push_bytes($chunk);
     }
-    push @events, map { Event::key_press($_) } @chars;
+    push @events, map { ZTUI::Event::key_press($_) } @chars;
     return @events;
 }
 
@@ -115,8 +114,8 @@ Input
 
 =head1 SYNOPSIS
 
-    use Input;
-    my $inp = Input::new();
+    use ZTUI::Input;
+    my $inp = ZTUI::Input::new();
     my @events = $inp->poll(0.01);
 
 =head1 DESCRIPTION

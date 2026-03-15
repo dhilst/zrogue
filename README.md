@@ -1,19 +1,30 @@
-# zrogue
+# ztui
 
-Terminal UI experiments in Perl. The project includes a small rendering stack
-with double buffering, geometry helpers, and a declarative `TML` runtime.
+`ZTUI` is a Perl terminal UI and rendering toolkit with a declarative `TML`
+runtime, packed-buffer rendering, and geometry helpers.
 
 **What’s here**
 
 - Renderers for direct and double-buffered drawing
 - Packed 2D buffers for fast updates
 - Geometry parsing with labeled anchor points
-- A `TML` demo UI in `zrogue.pl`
+- A `TML` demo UI in `examples/zrogue.pl`
 
 **Run**
 
+Run from source checkout:
+
 ```bash
-perl zrogue.pl
+perl examples/zrogue.pl
+```
+
+CPAN-style install workflow:
+
+```bash
+perl Makefile.PL
+make
+make test
+make install
 ```
 
 **Tests**
@@ -33,11 +44,11 @@ configured for UTF‑8 for characters like `é` to work correctly.
 
 **Project layout**
 
-- `Renderers.pm` contains `Renderers::Naive` and `Renderers::DoubleBuffering`
-- `Buffer2D.pm` stores packed per-cell data
-- `Surface.pm` composes layers into a buffer
-- `UTF8Buffer.pm` decodes UTF‑8 byte streams
-- `TML.pm` contains the declarative tree/runtime
-- `zrogue.pl` wires the demo UI together
+- `lib/ZTUI/Renderers.pm` contains `Renderers::Naive` and `Renderers::DoubleBuffering`
+- `lib/ZTUI/Buffer2D.pm` stores packed per-cell data
+- `lib/ZTUI/Surface.pm` composes layers into a buffer
+- `lib/ZTUI/UTF8Buffer.pm` decodes UTF-8 byte streams
+- `lib/ZTUI/TML.pm` contains the declarative tree/runtime
+- `examples/zrogue.pl` wires the demo UI together
 
 If you want a different control scheme or widget behavior, say the word.

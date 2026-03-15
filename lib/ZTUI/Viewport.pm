@@ -1,11 +1,10 @@
-package Viewport;
+package ZTUI::Viewport;
 use v5.36;
 use utf8;
 use integer;
 
-use lib ".";
-use Utils qw(getters);
-use Matrix3;
+use ZTUI::Utils qw(getters);
+use ZTUI::Matrix3;
 
 getters qw(
     h w
@@ -16,14 +15,14 @@ getters qw(
     bottomright 
 );
 
-# $pos_vec is expected to be Matrix3::Vec
+# $pos_vec is expected to be ZTUI::Matrix3::Vec
 # $h and $w are integers
 sub from_pos_hw($pos_vec, $h, $w) {
-    my $center = $pos_vec * Matrix3::translate(($w - 1) / 2, -$h / 2);
+    my $center = $pos_vec * ZTUI::Matrix3::translate(($w - 1) / 2, -$h / 2);
     my $topleft = $pos_vec;
-    my $topright = $pos_vec * Matrix3::translate($w-1, 0);
-    my $bottomleft = $pos_vec * Matrix3::translate(0, -$h+1);
-    my $bottomright = $pos_vec * Matrix3::translate($w-1, -$h+1);
+    my $topright = $pos_vec * ZTUI::Matrix3::translate($w-1, 0);
+    my $bottomleft = $pos_vec * ZTUI::Matrix3::translate(0, -$h+1);
+    my $bottomright = $pos_vec * ZTUI::Matrix3::translate($w-1, -$h+1);
     my $self = bless {
         h => $h,
         w => $w,
@@ -51,8 +50,8 @@ Viewport
 
 =head1 SYNOPSIS
 
-    use Viewport;
-    my $vp = Viewport::from_pos_hw($pos, $h, $w);
+    use ZTUI::Viewport;
+    my $vp = ZTUI::Viewport::from_pos_hw($pos, $h, $w);
     my $center = $vp->center;
 
 =head1 DESCRIPTION

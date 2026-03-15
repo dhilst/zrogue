@@ -2,11 +2,11 @@ use v5.36;
 use utf8;
 
 use FindBin qw($Bin);
-use lib "$Bin/../..";
+use lib "$Bin/../../lib";
 use lib $Bin;
 
 use RunnableSupport qw(theme frame_update sleep_step progress_message format_exit_report);
-use TML qw(App Layer InputRoot FocusScope VBox HBox BBox Rect Text TextField List TextViewport Button ButtonRow OnKey OnUpdate);
+use ZTUI::TML qw(App Layer InputRoot FocusScope VBox HBox BBox Rect Text TextField List TextViewport Button ButtonRow OnKey OnUpdate);
 
 my %state = (code => 'ASH', selected => 0, scroll => 0);
 my @targets = map { +{ label => $_ } } qw(Gate Lift Tower Vault);

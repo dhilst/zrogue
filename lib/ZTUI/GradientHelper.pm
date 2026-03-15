@@ -1,4 +1,4 @@
-package GradientHelper {
+package ZTUI::GradientHelper {
     use v5.36;
 
     use Carp;
@@ -185,9 +185,9 @@ GradientHelper
 
 =head1 SYNOPSIS
 
-    use GradientHelper;
+    use ZTUI::GradientHelper;
 
-    my $gradient = GradientHelper::new(
+    my $gradient = ZTUI::GradientHelper::new(
         angle_deg   => 45,
         start_color => 0x1d3557,
         end_color   => 0xe63946,

@@ -1,11 +1,10 @@
-package UTF8Buffer;
+package ZTUI::UTF8Buffer;
 
 use v5.36;
 use utf8;
 use Carp;
 
-use lib ".";
-use Utils qw(getters);
+use ZTUI::Utils qw(getters);
 
 getters qw(buf);
 
@@ -85,9 +84,9 @@ UTF8Buffer
 
 =head1 SYNOPSIS
 
-    use UTF8Buffer;
+    use ZTUI::UTF8Buffer;
 
-    my $buf = UTF8Buffer::new();
+    my $buf = ZTUI::UTF8Buffer::new();
     my @chars = $buf->push_bytes($bytes);
     push @chars, $buf->drain;
 

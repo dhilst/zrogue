@@ -2,19 +2,20 @@ use v5.36;
 use Test::More;
 use Test::Exception;
 
-use lib ".";
-use Matrix3;
-use Geometry3;
-use MaterialMapper;
-use Quad;
-use Surface;
-use TerminalStyle;
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use ZTUI::Matrix3;
+use ZTUI::Geometry3;
+use ZTUI::MaterialMapper;
+use ZTUI::Quad;
+use ZTUI::Surface;
+use ZTUI::TerminalStyle;
 
-sub vect($x, $y) { Matrix3::Vec::from_xy($x, $y) }
+sub vect($x, $y) { ZTUI::Matrix3::Vec::from_xy($x, $y) }
 
 subtest 'render_text writes glyphs and styles' => sub {
-    my $mat = MaterialMapper::from_callback(sub ($mat) { return {}; });
-    my $surface = Surface::new(3, 5, -material => $mat);
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($mat) { return {}; });
+    my $surface = ZTUI::Surface::new(3, 5, -material => $mat);
     $surface->render_text(vect(1, 0), "Hi", -fg => 7);
 
     is_deeply([ $surface->buffer->get(1, 0) ], [ord('H'), 7, -1, -1], 'H cell');
@@ -22,10 +23,10 @@ subtest 'render_text writes glyphs and styles' => sub {
 };
 
 subtest 'render_line uses material style' => sub {
-    my $mat = MaterialMapper::from_callback(sub ($mat) {
-        return TerminalStyle::new(-bg => 5) if $mat eq 'LINE';
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($mat) {
+        return ZTUI::TerminalStyle::new(-bg => 5) if $mat eq 'LINE';
     });
-    my $surface = Surface::new(3, 5, -material => $mat);
+    my $surface = ZTUI::Surface::new(3, 5, -material => $mat);
     $surface->render_line(vect(0, 0), vect(2, 0), 'LINE');
 
     for my $col (0 .. 2) {
@@ -36,11 +37,11 @@ subtest 'render_line uses material style' => sub {
 };
 
 subtest 'render_quad fills rectangle' => sub {
-    my $mat = MaterialMapper::from_callback(sub ($mat) {
-        return TerminalStyle::new(-bg => 9) if $mat eq 'BG';
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($mat) {
+        return ZTUI::TerminalStyle::new(-bg => 9) if $mat eq 'BG';
     });
-    my $surface = Surface::new(3, 4, -material => $mat);
-    my $quad = Quad::from_wh(2, 2, 'BG');
+    my $surface = ZTUI::Surface::new(3, 4, -material => $mat);
+    my $quad = ZTUI::Quad::from_wh(2, 2, 'BG');
     $surface->render_quad(vect(0, 0), $quad);
 
     is_deeply([ $surface->buffer->get(0, 0) ], [ord(' '), -1, 9, -1], 'top-left');
@@ -50,9 +51,9 @@ subtest 'render_quad fills rectangle' => sub {
 };
 
 subtest 'render_geometry draws text at positions' => sub {
-    my $mat = MaterialMapper::from_callback(sub ($mat) { return {}; });
-    my $surface = Surface::new(3, 3, -material => $mat);
-    my $geo = Geometry3::from_str("AB\nCD");
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($mat) { return {}; });
+    my $surface = ZTUI::Surface::new(3, 3, -material => $mat);
+    my $geo = ZTUI::Geometry3::from_str("AB\nCD");
     $surface->render_geometry(vect(0, 0), $geo);
 
     is_deeply([ $surface->buffer->get(0, 0) ], [ord('A'), -1, -1, -1], 'A');
@@ -62,11 +63,11 @@ subtest 'render_geometry draws text at positions' => sub {
 };
 
 subtest 'layers compose via successive draws' => sub {
-    my $mat = MaterialMapper::from_callback(sub ($mat) {
-        return TerminalStyle::new(-bg => 3) if $mat eq 'BG';
+    my $mat = ZTUI::MaterialMapper::from_callback(sub ($mat) {
+        return ZTUI::TerminalStyle::new(-bg => 3) if $mat eq 'BG';
     });
-    my $surface = Surface::new(2, 2, -material => $mat);
-    my $quad = Quad::from_wh(2, 2, 'BG');
+    my $surface = ZTUI::Surface::new(2, 2, -material => $mat);
+    my $quad = ZTUI::Quad::from_wh(2, 2, 'BG');
     $surface->render_quad(vect(0, 0), $quad);
     $surface->render_text(vect(0, 0), "Z", -fg => 1);
 

@@ -1,12 +1,11 @@
-package Quad;
+package ZTUI::Quad;
 
 use v5.36;
 use utf8;
 use Carp;
 
-use lib ".";
-use Utils qw(getters);
-use Matrix3;
+use ZTUI::Utils qw(getters);
+use ZTUI::Matrix3;
 
 use overload
     '""' => \&to_string;
@@ -33,11 +32,11 @@ sub from_wh($width, $height, $material = undef) {
     confess "missing width" unless defined $width;
     confess "missing height" unless defined $height;
 
-    my $topleft = Matrix3::Vec::from_xy(0, 0);
-    my $topright = Matrix3::Vec::from_xy($width, 0);
-    my $bottomleft = Matrix3::Vec::from_xy(0, -$height);
-    my $bottomright = Matrix3::Vec::from_xy($width, -$height);
-    my $center = Matrix3::Vec::from_xy($width / 2, -$height / 2);
+    my $topleft = ZTUI::Matrix3::Vec::from_xy(0, 0);
+    my $topright = ZTUI::Matrix3::Vec::from_xy($width, 0);
+    my $bottomleft = ZTUI::Matrix3::Vec::from_xy(0, -$height);
+    my $bottomright = ZTUI::Matrix3::Vec::from_xy($width, -$height);
+    my $center = ZTUI::Matrix3::Vec::from_xy($width / 2, -$height / 2);
 
     bless {
         topleft => $topleft,
@@ -61,11 +60,11 @@ Quad
 
 =head1 SYNOPSIS
 
-use Quad;
-use Matrix3;
+use ZTUI::Quad;
+use ZTUI::Matrix3;
 
-my $topleft = Matrix3::Vec::from_xy(0, 0);
-my $quad = Quad::from_wh(10, 5);
+my $topleft = ZTUI::Matrix3::Vec::from_xy(0, 0);
+my $quad = ZTUI::Quad::from_wh(10, 5);
 
 =head1 DESCRIPTION
 

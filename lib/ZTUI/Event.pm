@@ -1,23 +1,23 @@
-package Event;
+package ZTUI::Event;
 use v5.36;
 use utf8;
 
 use Class::Struct;;
 
-package Event::Type {
+package ZTUI::Event::Type {
     use constant {
         KEY_PRESS => 'KEY_PRESS',
     };
 }
 
-package Event::KeyCode {
+package ZTUI::Event::KeyCode {
     use constant {
         ENTER => 10,
         ESC   => 27,
     };
 }
 
-package Event::KeyPress {
+package ZTUI::Event::KeyPress {
     use Class::Struct;
     use overload
         '""' => \&to_str;
@@ -42,8 +42,8 @@ struct
 # Constructors
 sub key_press($key_code) {
     __PACKAGE__->new(
-        type => Event::Type::KEY_PRESS,
-        payload => Event::KeyPress->new(char => $key_code, code => ord($key_code)),
+        type => ZTUI::Event::Type::KEY_PRESS,
+        payload => ZTUI::Event::KeyPress->new(char => $key_code, code => ord($key_code)),
     );
 }
 
@@ -62,8 +62,8 @@ Event
 
 =head1 SYNOPSIS
 
-    use Event;
-    my $ev = Event::key_press("a");
+    use ZTUI::Event;
+    my $ev = ZTUI::Event::key_press("a");
     say $ev->type;
 
 =head1 DESCRIPTION
@@ -75,15 +75,15 @@ supports key press events with a character and code.
 
 =over 4
 
-=item Event::Type
+=item ZTUI::Event::Type
 
 Contains constants like C<KEY_PRESS>.
 
-=item Event::KeyCode
+=item ZTUI::Event::KeyCode
 
 Contains constants like C<ENTER> and C<ESC>.
 
-=item Event::KeyPress
+=item ZTUI::Event::KeyPress
 
 Payload type with C<char> and C<code>.
 

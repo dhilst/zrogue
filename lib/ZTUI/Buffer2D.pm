@@ -1,10 +1,10 @@
-package Buffer2D;
+package ZTUI::Buffer2D;
 
 use v5.36;
 use Carp;
 use FindBin qw($Bin);
 use lib "$Bin";
-use Utils qw(getters);
+use ZTUI::Utils qw(getters);
 
 getters qw(
     H
@@ -65,7 +65,7 @@ sub from_other($other) {
 }
 
 sub copy($self) {
-    Buffer2D::from_other($self);
+    ZTUI::Buffer2D::from_other($self);
 }
 
 sub valid($self, $col, $row, $length = 1) {
@@ -308,8 +308,8 @@ Buffer2D
 
 =head1 SYNOPSIS
 
-    use Buffer2D;
-    my $buf = Buffer2D::new("l4", $H, $W, \@defaults, -autoclip => 1);
+    use ZTUI::Buffer2D;
+    my $buf = ZTUI::Buffer2D::new("l4", $H, $W, \@defaults, -autoclip => 1);
     $buf->set($col, $row, [@values]);
     my @cell = $buf->get($col, $row);
 
