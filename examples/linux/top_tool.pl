@@ -13,7 +13,7 @@ use ZTUI::GradientHelper;
 use ZTUI::MaterialMapper;
 use ZTUI::TerminalStyle;
 use ZTUI::Theme;
-use ZTUI::TML qw(App Layer VBox HBox BBox Rect Text TextViewport OnUpdate OnKey);
+use ZTUI::TML qw(App Layer VBox HBox BBox Tabs Tab Text TextViewport InputRoot OnUpdate OnKey);
 use List::Util qw(sum);
 use Getopt::Long qw(GetOptionsFromArray);
 use Carp qw(confess);
@@ -96,7 +96,6 @@ my $state = {
     disk_order   => 'read',
     net_order    => 'rx',
     disk_space   => [],
-    help_visible => 0,
     help_scroll  => 0,
     process_sort => 'cpu',
     sort_idx     => 0,
@@ -582,11 +581,6 @@ sub help_bar_parts ($state) {
     );
 }
 
-sub toggle_help ($state) {
-    $state->{help_visible} = $state->{help_visible} ? 0 : 1;
-    $state->{help_scroll} = 0 if $state->{help_visible};
-}
-
 sub toggle_disk_order ($state) {
     $state->{disk_order} = ($state->{disk_order} // 'read') eq 'write' ? 'read' : 'write';
 }
@@ -675,6 +669,16 @@ sub render_processes ($state, $renderer = undef) {
     return $text;
 }
 
+sub help_viewport_height ($app, $renderer = undef) {
+    my $rows = defined($renderer) && $renderer->can('height')
+        ? int($renderer->height // 0)
+        : int($app->runtime_info->{rows} // 0);
+    my $height = $rows - 7;
+    return $height > 1 ? $height : 1;
+}
+
+my $tabs;
+
 my $app = App {
     OnUpdate sub ($app, $dt, @events) {
         my $now = time;
@@ -696,152 +700,169 @@ my $app = App {
         $app->skip_render unless $render_this_frame;
     };
     OnKey 'q' => sub ($app, $event) {
-        if ($state->{help_visible}) {
-            $state->{help_visible} = 0;
+        if (defined($tabs) && (($tabs->active_tab_name // '') eq 'help')) {
+            $tabs->open_modal('main');
             return;
         }
         $app->quit;
     };
-    OnKey 'H' => sub ($app, $event) { toggle_help($state) };
-    OnKey "\t" => sub ($app, $event) { cycle_sort($state, 1) };
-    OnKey 'K' => sub ($app, $event) { cycle_sort($state, -1) };
-    OnKey 'D' => sub ($app, $event) { toggle_disk_order($state) };
-    OnKey 'N' => sub ($app, $event) { toggle_network_order($state) };
-    OnKey 'j' => sub ($app, $event) {
-        return unless $state->{help_visible};
-        $state->{help_scroll}++;
+    OnKey 'H' => sub ($app, $event) {
+        return unless defined $tabs;
+        if (($tabs->active_tab_name // '') eq 'help') {
+            $tabs->open_modal('main');
+            return;
+        }
+        $state->{help_scroll} = 0;
+        $tabs->open_modal('help');
     };
-    OnKey 'k' => sub ($app, $event) {
-        return unless $state->{help_visible};
-        $state->{help_scroll}--;
+    OnKey "\t" => sub ($app, $event) {
+        return if defined($tabs) && (($tabs->active_tab_name // '') eq 'help');
+        cycle_sort($state, 1);
+    };
+    OnKey 'K' => sub ($app, $event) {
+        return if defined($tabs) && (($tabs->active_tab_name // '') eq 'help');
+        cycle_sort($state, -1);
+    };
+    OnKey 'D' => sub ($app, $event) {
+        return if defined($tabs) && (($tabs->active_tab_name // '') eq 'help');
+        toggle_disk_order($state);
+    };
+    OnKey 'N' => sub ($app, $event) {
+        return if defined($tabs) && (($tabs->active_tab_name // '') eq 'help');
+        toggle_network_order($state);
     };
 
     Layer {
-        VBox {
-            BBox {
+        $tabs = Tabs {
+            Tab {
                 VBox {
-                    Text {} -text => 'CPU & MEMORY', -material => 'TITLE', -margin => 0;
-                    Text {} -text => 'CPU Usage', -material => 'VALUE';
+                    BBox {
+                        VBox {
+                            Text {} -text => 'CPU & MEMORY', -material => 'TITLE', -margin => 0;
+                            Text {} -text => 'CPU Usage', -material => 'VALUE';
 
-                        do {
-                        my $bar_width_cb = bar_width_for_cpu_rows();
-                        my $pair_count = cpu_display_pairs($state);
-                        my $cpu_rows = cpu_core_count_from_snapshot($state);
-                        for my $row_idx (0 .. $pair_count - 1) {
-                            my $left = $row_idx * 2;
-                            my $right = $left + 1;
-                            if ($right < $cpu_rows) {
+                            do {
+                                my $bar_width_cb = bar_width_for_cpu_rows();
+                                my $pair_count = cpu_display_pairs($state);
+                                my $cpu_rows = cpu_core_count_from_snapshot($state);
+                                for my $row_idx (0 .. $pair_count - 1) {
+                                    my $left = $row_idx * 2;
+                                    my $right = $left + 1;
+                                    if ($right < $cpu_rows) {
+                                        HBox {
+                                            render_cpu_entry($state, $left, $bar_width_cb);
+                                            Text {} -text => '  ';
+                                            render_cpu_entry($state, $right, $bar_width_cb);
+                                        } -gap => 0, -margin => 0;
+                                    } else {
+                                        render_cpu_entry($state, $left, $bar_width_cb);
+                                    }
+                                }
+                                Text {} -text => sub {
+                                    my $pair_count = cpu_row_count_from_snapshot($state);
+                                    return '' if $pair_count > 0;
+                                    return $state->{snapshot} && $state->{snapshot}->{raw} ? 'No CPU data' : 'collecting CPU data...';
+                                };
+                            };
+
+                            Text {} -text => sub { memory_summary_line($state) }, -material => 'TEXT', -margin => 0;
+                            HBox {
+                                build_gradient_bar(
+                                    sub { memory_percent($state) },
+                                    sub { bar_width_for_panel($_[0], 24) },
+                                );
+                            } -gap => 0, -margin => 0;
+                        } -gap => 0, -margin => 0, -overflow => 'clip';
+                    } -width => '100%', -height => sub { cpu_memory_panel_height($state, $_[1]) }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
+                    HBox {
+                        BBox {
+                            VBox {
+                                Text {} -text => sub { disk_summary_title($state) }, -material => 'TITLE', -margin => 0;
                                 HBox {
-                                    render_cpu_entry($state, $left, $bar_width_cb);
-                                    Text {} -text => '  ';
-                                    render_cpu_entry($state, $right, $bar_width_cb);
-                                } -gap => 0, -margin => 0;
-                            } else {
-                                render_cpu_entry($state, $left, $bar_width_cb);
-                            }
+                                Text {} -text => 'Read ', -material => 'TEXT', -margin => 0;
+                                build_gradient_bar(
+                                    sub { summarize_iostat_payload($state, 'disk', $state->{disk_order} // 'read')->{percent_read} // 0 },
+                                    sub { bar_width_for_half_panel($_[0], 18) },
+                                );
+                            } -gap => 0, -margin => 0;
+                            HBox {
+                                Text {} -text => 'Write', -material => 'TEXT', -margin => 0;
+                                build_gradient_bar(
+                                    sub { summarize_iostat_payload($state, 'disk', $state->{disk_order} // 'read')->{percent_write} // 0 },
+                                    sub { bar_width_for_half_panel($_[0], 18) },
+                                );
+                            } -gap => 0, -margin => 0;
+                                Text {} -text => sub { summarize_iostat($state, 'disk') }, -material => 'TEXT', -overflow => 'clip';
+                            } -gap => 0, -margin => 0;
+                        } -width => '50%', -height => sub { panel_top_height() }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
+                        BBox {
+                            VBox {
+                                Text {} -text => 'Disk Space', -material => 'TITLE', -margin => 0;
+                                Text {} -text => sub { render_disk_space($state) }, -material => 'TEXT', -overflow => 'clip';
+                            } -gap => 0, -margin => 0;
+                        } -width => '50%', -height => sub { panel_top_height() }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
+                    } -gap => 1, -margin => 0;
+                    BBox {
+                        VBox {
+                            Text {} -text => sub { network_summary_title($state) }, -material => 'TITLE', -margin => 0;
+                            HBox {
+                                Text {} -text => 'RX   ', -material => 'TEXT', -margin => 0;
+                                build_gradient_bar(
+                                    sub { summarize_iostat_payload($state, 'network', $state->{net_order} // 'rx')->{percent_rx} // 0 },
+                                    sub { bar_width_for_panel($_[0], 34) },
+                                );
+                            } -gap => 0, -margin => 0;
+                            HBox {
+                                Text {} -text => 'TX   ', -material => 'TEXT', -margin => 0;
+                                build_gradient_bar(
+                                    sub { summarize_iostat_payload($state, 'network', $state->{net_order} // 'rx')->{percent_tx} // 0 },
+                                    sub { bar_width_for_panel($_[0], 34) },
+                                );
+                            } -gap => 0, -margin => 0;
+                            Text {} -text => sub { summarize_iostat($state, 'network') }, -material => 'TEXT', -overflow => 'clip';
+                        } -gap => 0, -margin => 0;
+                    } -width => '100%', -height => sub { panel_top_height() }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
+                    BBox {
+                        Text {} -text => sub { render_processes($state, $_[1]) }, -material => 'TEXT', -overflow => 'clip';
+                    } -width => '100%', -height => sub { process_panel_height($state, $_[1]) }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
+                    HBox {
+                        for my $part (help_bar_parts($state)) {
+                            Text {} -text => $part->{text}, -material => $part->{material}, -margin => 0;
                         }
-                        Text {} -text => sub {
-                            my $pair_count = cpu_row_count_from_snapshot($state);
-                            return '' if $pair_count > 0;
-                            return $state->{snapshot} && $state->{snapshot}->{raw} ? 'No CPU data' : 'collecting CPU data...';
-                        };
-                    };
-
-                    Text {} -text => sub { memory_summary_line($state) }, -material => 'TEXT', -margin => 0;
-                    HBox {
-                        build_gradient_bar(
-                            sub { memory_percent($state) },
-                            sub { bar_width_for_panel($_[0], 24) },
-                        );
                     } -gap => 0, -margin => 0;
-                } -gap => 0, -margin => 0, -overflow => 'clip';
-            } -width => '100%', -height => sub { cpu_memory_panel_height($state, $_[1]) }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
-            HBox {
+                } -gap => 0,
+                  -width => '100%',
+                  -height => '100%',
+                  -margin => 0;
+            } -name => 'main', -margin => 0;
+            Tab {
                 BBox {
                     VBox {
-                        Text {} -text => sub { disk_summary_title($state) }, -material => 'TITLE', -margin => 0;
-                        HBox {
-                        Text {} -text => 'Read ', -material => 'TEXT', -margin => 0;
-                        build_gradient_bar(
-                            sub { summarize_iostat_payload($state, 'disk', $state->{disk_order} // 'read')->{percent_read} // 0 },
-                            sub { bar_width_for_half_panel($_[0], 18) },
-                        );
+                        Text {} -text => 'Top Tool Help', -material => 'TITLE', -margin => 0;
+                        Text {} -text => 'Press q or H to return. Use j/k or h/l to scroll.', -material => 'VALUE', -margin => 0;
+                        InputRoot {
+                            TextViewport {}
+                                -lines_ref => \@help_lines,
+                                -scroll_ref => \$state->{help_scroll},
+                                -width => '100%',
+                                -height => sub ($app, $renderer, $node) { help_viewport_height($app, $renderer) },
+                                -material => 'TEXT',
+                                -margin => 0;
+                        } -margin => 0;
                     } -gap => 0, -margin => 0;
-                    HBox {
-                        Text {} -text => 'Write', -material => 'TEXT', -margin => 0;
-                        build_gradient_bar(
-                            sub { summarize_iostat_payload($state, 'disk', $state->{disk_order} // 'read')->{percent_write} // 0 },
-                            sub { bar_width_for_half_panel($_[0], 18) },
-                        );
-                    } -gap => 0, -margin => 0;
-                        Text {} -text => sub { summarize_iostat($state, 'disk') }, -material => 'TEXT', -overflow => 'clip';
-                    } -gap => 0, -margin => 0;
-                } -width => '50%', -height => sub { panel_top_height() }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
-                BBox {
-                    VBox {
-                        Text {} -text => 'Disk Space', -material => 'TITLE', -margin => 0;
-                        Text {} -text => sub { render_disk_space($state) }, -material => 'TEXT', -overflow => 'clip';
-                    } -gap => 0, -margin => 0;
-                } -width => '50%', -height => sub { panel_top_height() }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
-            } -gap => 1, -margin => 0;
-            BBox {
-                VBox {
-                    Text {} -text => sub { network_summary_title($state) }, -material => 'TITLE', -margin => 0;
-                    HBox {
-                        Text {} -text => 'RX   ', -material => 'TEXT', -margin => 0;
-                        build_gradient_bar(
-                            sub { summarize_iostat_payload($state, 'network', $state->{net_order} // 'rx')->{percent_rx} // 0 },
-                            sub { bar_width_for_panel($_[0], 34) },
-                        );
-                    } -gap => 0, -margin => 0;
-                    HBox {
-                        Text {} -text => 'TX   ', -material => 'TEXT', -margin => 0;
-                        build_gradient_bar(
-                            sub { summarize_iostat_payload($state, 'network', $state->{net_order} // 'rx')->{percent_tx} // 0 },
-                            sub { bar_width_for_panel($_[0], 34) },
-                        );
-                    } -gap => 0, -margin => 0;
-                    Text {} -text => sub { summarize_iostat($state, 'network') }, -material => 'TEXT', -overflow => 'clip';
-                } -gap => 0, -margin => 0;
-            } -width => '100%', -height => sub { panel_top_height() }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
-            BBox {
-                Text {} -text => sub { render_processes($state, $_[1]) }, -material => 'TEXT', -overflow => 'clip';
-            } -width => '100%', -height => sub { process_panel_height($state, $_[1]) }, -material => 'PANEL', -border_material => 'FRAME', -margin => 0;
-            HBox {
-                for my $part (help_bar_parts($state)) {
-                    Text {} -text => $part->{text}, -material => $part->{material}, -margin => 0;
-                }
-            } -gap => 0, -margin => 0;
-        } -gap => 0,
+                } -width => '100%',
+                  -height => '100%',
+                  -material => 'PANEL',
+                  -border_material => 'FRAME',
+                  -margin => 0;
+            } -name => 'help', -margin => 0;
+        } -active => 'main',
           -width => '100%',
           -height => '100%',
           -margin => 0,
           -x => sub ($app, $renderer, $node) { -int(($renderer->width // 0) / 2) },
           -y => sub ($app, $renderer, $node) { int(($renderer->height // 0) / 2) };
     };
-
-    # Temporary: help modal disabled for debugging.
-    # Layer {
-    #     Rect {} -width => sub { $state->{help_visible} ? '100%' : 0 },
-    #         -height => sub { $state->{help_visible} ? '100%' : 0 },
-    #         -material => 'BACKDROP',
-    #         -x => sub ($app, $renderer, $node) { -int(($renderer->width // 0) / 2) },
-    #         -y => sub ($app, $renderer, $node) { int(($renderer->height // 0) / 2) };
-    #     BBox {
-    #         TextViewport {}
-    #             -lines_ref => \@help_lines,
-    #             -scroll_ref => \$state->{help_scroll},
-    #             -width => '100%',
-    #             -height => '100%',
-    #             -margin => 0;
-    #     } -width => sub { $state->{help_visible} ? '100%' : 0 },
-    #       -height => sub { $state->{help_visible} ? '100%' : 0 },
-    #       -material => 'PANEL',
-    #       -border_material => 'FRAME',
-    #       -margin => 0,
-    #       -x => sub ($app, $renderer, $node) { -int(($renderer->width // 0) / 2) },
-    #       -y => sub ($app, $renderer, $node) { int(($renderer->height // 0) / 2) };
-    # };
 };
 
 $app->run($top_tool_theme);
@@ -915,7 +936,11 @@ Show this help text.
 
 =item B<q>
 
-Quit the application.
+Quit the application, or close the help tab if it is open.
+
+=item B<H>
+
+Open or close the help tab.
 
 =item B<Tab>
 
@@ -932,6 +957,10 @@ Toggle disk ordering between read and write.
 =item B<N>
 
 Toggle network ordering between RX and TX.
+
+=item B<j>/B<k> and B<h>/B<l>
+
+Scroll the help viewport while the help tab is active.
 
 =back
 
