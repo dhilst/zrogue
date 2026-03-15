@@ -974,6 +974,33 @@ package TML::Runtime::App {
         return $buffer_ref;
     }
 
+    sub _textfield_validate($self, $node) {
+        my $validator = $node->{props}{validate};
+        return undef unless defined $validator;
+        my $type = ref($validator);
+        confess "TextField -validate must be a coderef or regex"
+            unless $type eq 'CODE' || $type eq 'Regexp';
+        return $validator;
+    }
+
+    sub _textfield_is_valid($self, $node, $candidate) {
+        my $validator = $self->_textfield_validate($node);
+        return 1 unless defined $validator;
+
+        return $validator->($self, undef, $node, $candidate)
+            if ref($validator) eq 'CODE';
+        return $candidate =~ $validator ? 1 : 0;
+    }
+
+    sub _textfield_invalid($self, $node, $candidate) {
+        my $cb = $node->{props}{on_invalid};
+        return unless defined $cb;
+        confess "TextField -on_invalid must be a coderef"
+            unless ref($cb) eq 'CODE';
+        $cb->($self, $node, $candidate);
+        return;
+    }
+
     sub _textfield_is_active($self, $node) {
         my $active_ref = $self->_textfield_active_ref($node);
         return $$active_ref ? 1 : 0;
@@ -990,6 +1017,7 @@ package TML::Runtime::App {
     }
 
     sub _textfield_begin_edit($self, $node) {
+        $self->_textfield_validate($node);
         my $active_ref = $self->_textfield_active_ref($node);
         my $buffer_ref = $self->_textfield_buffer_ref($node);
         my $value_ref = $self->_textfield_value_ref($node);
@@ -1490,11 +1518,15 @@ package TML::Runtime::App {
         my $buffer_ref = $self->_textfield_buffer_ref($node);
         $$buffer_ref = '' unless defined $$buffer_ref;
 
-        if ($char eq "\n") {
-            return $self->_textfield_commit($node);
-        }
         if ($char eq "\e") {
             return $self->_textfield_cancel($node);
+        }
+        if ($char eq "\n") {
+            if ($self->_textfield_is_valid($node, $$buffer_ref)) {
+                return $self->_textfield_commit($node);
+            }
+            $self->_textfield_invalid($node, $$buffer_ref);
+            return 1;
         }
         if ($char eq "\x7f" || $char eq "\b") {
             substr($$buffer_ref, -1, 1, '') if length($$buffer_ref);
@@ -2679,6 +2711,64 @@ Options:
 =item * C<-material> (semantic material key, default C<DEFAULT>)
 
 =item * C<-justify> (passed to renderer; e.g. C<left>, C<center>, C<right>)
+
+=back
+
+=head2 TextField
+
+Interactive single-line text input.
+
+Options:
+
+=over 4
+
+=item * C<-value_ref> (scalar ref, required)
+
+Underlying committed value.
+
+=item * C<-validate> (regex or coderef, optional)
+
+Validation is enforced only when committing with C<Enter>:
+
+=over 4
+
+=item * C<Regexp>
+
+Candidate must match the regex.
+
+=item * C<CODE>
+
+Signature: C<sub ($app, $renderer, $node, $candidate) { ... }>.
+The callback must return a truthy value when the candidate is valid.
+
+=back
+
+=item * C<-max_length> (numeric, optional)
+
+Limits editable draft length in characters.
+
+=item * C<-on_change> (coderef, optional)
+
+Invoked after a successful commit with
+C<sub ($app, $node, $new_value)>.
+
+=item * C<-on_submit> (coderef, optional)
+
+Invoked after a successful commit with
+C<sub ($app, $node, $new_value)>.
+
+=item * C<-on_cancel> (coderef, optional)
+
+Invoked after cancel with C<sub ($app, $node, $old_value)>.
+
+=item * C<-on_invalid> (coderef, optional)
+
+Invoked when validation fails with
+C<sub ($app, $node, $candidate)>.
+
+=item * C<-focused_material>, C<-active_material>, C<-material>, C<-width>, C<-margin>
+
+Style and layout props behave as for other interactive widgets.
 
 =back
 

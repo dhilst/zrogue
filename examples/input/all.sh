@@ -13,3 +13,4 @@ perl examples/input/10-yesno-dialog.pl
 perl examples/input/11-menu-dialog.pl
 perl examples/input/12-form-dialog.pl
 perl examples/input/13-mixed-dialog.pl
+perl examples/input/14-textfield-validation.pl

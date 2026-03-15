@@ -6,6 +6,7 @@ use lib '.';
 use TerminalStyle;
 use TerminalBorderStyle;
 use Theme;
+use File::Temp qw(tempfile);
 
 sub warnings($code) {
     my @warnings;
@@ -180,6 +181,87 @@ subtest 'delegates cache class lookups' => sub {
     is($theme->border_cache_class('B'), 'STATIC_CELLWISE', 'border cache class delegated');
     is($theme->material_cache_key(1, 2, 3, 'A'), 'mat:1:2:3:A', 'material cache key delegated');
     is($theme->border_cache_key(1, 2, 3, 'B', 'TOP'), 'border:1:2:3:B:TOP', 'border cache key delegated');
+};
+
+subtest 'from_file loads static theme definitions' => sub {
+    my $content = <<'INI'
+[material:TITLE]
+fg = 0x00ff00
+bg = 0
+attrs = 1
+
+[material:DEFAULT]
+fg = 0x123456
+
+[border:FRAME]
+fg = 9
+bg = 17
+attrs = 0
+glyphs = ┌,─,┐,│, ,│,└,─,┘
+INI
+;
+
+    my ($fh, $path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$fh} $content;
+    close $fh;
+
+    my $theme = Theme::from_file($path);
+
+    is_deeply($theme->style('TITLE')->as_hashref, {
+        -fg => 0x00ff00,
+        -bg => 0,
+        -attrs => 1,
+    }, 'material loaded from file');
+    is_deeply($theme->style('DEFAULT')->as_hashref, {
+        -fg => 0x123456,
+    }, 'default material loaded from file');
+
+    my $frame = $theme->border('FRAME');
+    isa_ok($frame, 'TerminalBorderStyle');
+    is_deeply($frame->border, ['┌', '─', '┐', '│', ' ', '│', '└', '─', '┘'], 'frame border glyphs loaded');
+    is($frame->fg, 9, 'frame border fg loaded');
+    is($frame->bg, 17, 'frame border bg loaded');
+    is($frame->attrs, 0, 'frame border attrs loaded');
+};
+
+subtest 'from_file supports inline content mode' => sub {
+    my $theme = Theme::from_file('ignored', -content => <<'INI'
+[material:ALT]
+fg = 255
+bg = -1
+
+[border:ALT]
+fg = -1
+glyphs = +,+,+,+, ,+,+,+,+
+INI
+);
+    is($theme->style('ALT')->fg, 255, 'inline content material loaded');
+    is($theme->border('ALT')->bg, -1, 'inline content border loaded');
+    is_deeply($theme->border('ALT')->border, ['+', '+', '+', '+', ' ', '+', '+', '+', '+'], 'inline content glyphs loaded');
+};
+
+subtest 'from_file fails on schema violations' => sub {
+    my $bad_sections = <<'INI'
+[unknown:THING]
+fg = 1
+INI
+;
+
+    my ($fh1, $path1) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$fh1} $bad_sections;
+    close $fh1;
+    dies_ok { Theme::from_file($path1) } 'unknown top-level section dies';
+
+    my $bad_border = <<'INI'
+[border:FRAME]
+glyphs = +
+INI
+;
+
+    my ($fh2, $path2) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$fh2} $bad_border;
+    close $fh2;
+    dies_ok { Theme::from_file($path2) } 'malformed border glyph list dies';
 };
 
 done_testing;

@@ -3,8 +3,10 @@ package Theme;
 use v5.36;
 use utf8;
 use Carp qw(confess);
-
 use lib ".";
+use IniFile;
+use MaterialMapper;
+use BorderMapper;
 use TerminalStyle;
 use TerminalBorderStyle;
 
@@ -37,6 +39,267 @@ sub new(%opts) {
         ),
     };
     bless $self, __PACKAGE__;
+}
+
+sub from_file($path_or_content, %opts) {
+    my $source = $opts{-content} // $path_or_content;
+    confess "missing path or content" unless defined $source;
+
+    my $strict = exists($opts{-strict}) ? $opts{-strict} : 1;
+    confess "-strict must be 0 or 1" unless $strict == 0 || $strict == 1;
+
+    my $ini = IniFile::new(-strict => $strict);
+    my $data;
+
+    if (defined $opts{-content}) {
+        $data = $ini->parse(-content => $source);
+    }
+    elsif (-f $source) {
+        $data = $ini->parse_file($source);
+    }
+    else {
+        $data = $ini->parse(-content => $source);
+    }
+
+    $ini->validate(
+        $data,
+        -strict_sections => $strict,
+        -strict_keys => $strict,
+        -sections => [
+            { name => 'theme.metadata' },
+            {
+                prefix => 'material:',
+                keys => {
+                    fg    => sub ($value, $section, $key) {
+                        return _looks_like_integer($value);
+                    },
+                    bg    => sub ($value, $section, $key) {
+                        return _looks_like_integer($value);
+                    },
+                    attrs => sub ($value, $section, $key) {
+                        return _looks_like_integer($value);
+                    },
+                },
+            },
+            {
+                prefix => 'border:',
+                keys => {
+                    fg        => sub ($value, $section, $key) {
+                        return _looks_like_integer($value);
+                    },
+                    bg        => sub ($value, $section, $key) {
+                        return _looks_like_integer($value);
+                    },
+                    attrs     => sub ($value, $section, $key) {
+                        return _looks_like_integer($value);
+                    },
+                    glyphs    => sub ($value, $section, $key) {
+                        return _looks_like_glyphs($value);
+                    },
+                    top_left  => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                    top      => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                    top_right => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                    left     => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                    center   => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                    right    => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                    bottom_left => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                    bottom   => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                    bottom_right => sub ($value, $section, $key) {
+                        return _looks_like_border_glyph($value);
+                    },
+                },
+            },
+        ],
+    );
+
+    my %material_map;
+    my %border_map;
+
+    for my $section (keys $data->%*) {
+        my $payload = $data->{$section};
+        if ($section =~ /^material:(.+)$/) {
+            my $material = $1;
+            confess "Missing material name in section '$section'" if !defined($material) || $material eq '';
+
+            my %style_args;
+            if (exists $payload->{fg}) {
+                my $fg = _coerce_int($payload->{fg}, $section, 'fg');
+                $style_args{-fg} = $fg if defined $fg;
+            }
+            if (exists $payload->{bg}) {
+                my $bg = _coerce_int($payload->{bg}, $section, 'bg');
+                $style_args{-bg} = $bg if defined $bg;
+            }
+            if (exists $payload->{attrs}) {
+                my $attrs = _coerce_int($payload->{attrs}, $section, 'attrs');
+                $style_args{-attrs} = $attrs if defined $attrs;
+            }
+
+            $material_map{$material} = TerminalStyle::new(%style_args);
+            next;
+        }
+
+        if ($section =~ /^border:(.+)$/) {
+            my $border_material = $1;
+            confess "Missing border material in section '$section'" if !defined($border_material) || $border_material eq '';
+
+            my %style_args;
+            if (exists $payload->{fg}) {
+                my $fg = _coerce_int($payload->{fg}, $section, 'fg');
+                $style_args{-fg} = $fg if defined $fg;
+            }
+            if (exists $payload->{bg}) {
+                my $bg = _coerce_int($payload->{bg}, $section, 'bg');
+                $style_args{-bg} = $bg if defined $bg;
+            }
+            if (exists $payload->{attrs}) {
+                my $attrs = _coerce_int($payload->{attrs}, $section, 'attrs');
+                $style_args{-attrs} = $attrs if defined $attrs;
+            }
+
+            my @named_glyph_fields = qw(
+                top_left
+                top
+                top_right
+                left
+                center
+                right
+                bottom_left
+                bottom
+                bottom_right
+            );
+
+            if (exists $payload->{glyphs}) {
+                $style_args{-border} = _parse_glyphs($payload->{glyphs}, $section);
+            }
+            else {
+                my @present = grep { exists $payload->{$_} } @named_glyph_fields;
+                if (@present) {
+                    confess "Border section '$section' must define all 9 border glyph names" if @present != 9;
+                    my @glyphs = map { _coerce_border_glyph($payload->{$_}, $section, $_) } @named_glyph_fields;
+                    $style_args{-border} = \@glyphs;
+                }
+            }
+
+            $border_map{$border_material} = TerminalBorderStyle::new(%style_args);
+            next;
+        }
+
+        next if $section eq 'theme.metadata';
+        confess "Unknown section '$section'";
+    }
+
+    my $material_mapper = MaterialMapper::from_callback(sub ($material) {
+        return $material_map{$material};
+    });
+    my $border_mapper = BorderMapper::from_callback(sub ($border_material) {
+        return $border_map{$border_material};
+    });
+
+    return Theme::new(
+        -material_mapper => $material_mapper,
+        -border_mapper => $border_mapper,
+    );
+}
+
+sub _coerce_int($value, $section, $key) {
+    if (!defined $value) {
+        confess "Missing value for '$key' in section '$section'";
+    }
+
+    my $text = "$value";
+    if ($text =~ /^\s*0x([0-9A-Fa-f]+)\s*$/) {
+        return hex $1;
+    }
+    if ($text =~ /^\s*([+-]?\d+)\s*$/) {
+        return int($1);
+    }
+
+    confess "Invalid integer '$value' for '$key' in section '$section'";
+}
+
+sub _looks_like_integer($value) {
+    return 0 unless defined $value;
+    return 1 if "$value" =~ /^\s*[+-]?\d+\s*$/;
+    return 1 if "$value" =~ /^\s*0x[0-9A-Fa-f]+\s*$/;
+    return 0;
+}
+
+sub _looks_like_border_glyph($value) {
+    return 0 unless defined $value;
+    my $glyph = _normalize_border_glyph($value);
+    return 0 unless defined $glyph;
+    my @chars = split //, $glyph;
+    return scalar(@chars) == 1;
+}
+
+sub _looks_like_glyphs($value) {
+    return 0 unless defined $value;
+    my @glyphs = split /,/, "$value";
+    return 0 if scalar(@glyphs) != 9;
+    for my $glyph (@glyphs) {
+        return 0 unless _looks_like_border_glyph($glyph);
+    }
+    return 1;
+}
+
+sub _coerce_border_glyph($value, $section, $key) {
+    if (!defined $value) {
+        confess "Missing border glyph '$key' in section '$section'";
+    }
+
+    my $glyph = _normalize_border_glyph($value);
+    if (!defined $glyph) {
+        confess "Border glyph '$key' must be a valid utf-8 character in section '$section'";
+    }
+
+    if ($glyph eq ' ') {
+        return ' ';
+    }
+
+    my @chars = split //, $glyph;
+    confess "Border glyph '$key' must be a single-character glyph in section '$section'"
+        unless @chars == 1;
+    return $chars[0];
+}
+
+sub _normalize_border_glyph($value) {
+    my $glyph = "$value";
+    return ' ' if $glyph =~ /^\s+$/;
+    $glyph =~ s/^\s+//;
+    $glyph =~ s/\s+$//;
+    return $glyph if utf8::is_utf8($glyph);
+
+    my $decoded = $glyph;
+    return undef unless utf8::decode($decoded);
+    return $decoded;
+}
+
+sub _parse_glyphs($value, $section) {
+    my @glyphs = split /,/, "$value";
+    confess "Border section '$section' must define 9 comma-separated glyphs"
+        unless @glyphs == 9;
+    my @coerced;
+    for my $glyph (@glyphs) {
+        push @coerced, _coerce_border_glyph($glyph, $section, 'glyphs');
+    }
+    return \@coerced;
 }
 
 sub style($self, $material, %context) {
@@ -148,6 +411,12 @@ style resolution.
 =item new(%opts)
 
 Constructs a theme from C<-material_mapper> and C<-border_mapper>.
+
+=item from_file($path_or_content, %opts)
+
+Creates a theme from static INI data. C<$path_or_content> may be a filesystem
+path or a direct content string. Use C<-content> explicitly to force content mode.
+Optional C<-strict> sets INI schema strictness (defaults to true).
 
 =item style($material, %context)
 

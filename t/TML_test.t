@@ -1,5 +1,6 @@
 use v5.36;
 use Test::More;
+use Test::Exception;
 
 use lib '.';
 use Event;
@@ -432,6 +433,117 @@ subtest 'TextField requires explicit activation and supports commit/cancel' => s
     is_deeply(world_cell($renderer, 0, 0), [ord('['), 10, -1, 1], 'focused textfield uses focused material');
     is_deeply(world_cell($renderer, 1, 0), [ord('s'), 10, -1, 1], 'inactive textfield renders committed value');
     is_deeply(world_cell($renderer, 4, 0), [ord('d'), 10, -1, 1], 'inactive textfield does not render an active cursor');
+};
+
+subtest 'TextField supports regex validation before commit' => sub {
+    my $value = '';
+    my @changes;
+    my @submits;
+
+    my $app = App {
+        InputRoot {
+            TextField {}
+                -value_ref => \$value,
+                -validate => qr/^[a-z]+$/,
+                -on_change => sub ($app, $node, $new_value) { push @changes, $new_value },
+                -on_submit => sub ($app, $node, $new_value) { push @submits, $new_value },
+                -margin => 0;
+        } -margin => 0;
+    } -state => {};
+
+    ok($app->update(0.1, Event::key_press("\n")), 'enter activates textfield');
+    ok($app->update(0.1, Event::key_press('a')), 'valid draft input is accepted');
+    ok($app->update(0.1, Event::key_press('b')), 'second valid draft input is accepted');
+    ok($app->update(0.1, Event::key_press("\n")), 'enter commits validated draft');
+
+    is($value, 'ab', 'validated value is committed');
+    is_deeply(\@changes, ['ab'], 'change callback runs when validation succeeds');
+    is_deeply(\@submits, ['ab'], 'submit callback runs when validation succeeds');
+};
+
+subtest 'TextField blocks invalid regex candidates and preserves draft editing state' => sub {
+    my $value = '';
+    my @changes;
+    my @submits;
+    my @cancels;
+
+    my $app = App {
+        InputRoot {
+            TextField {}
+                -value_ref => \$value,
+                -validate => qr/^\d+$/,
+                -on_change => sub ($app, $node, $new_value) { push @changes, $new_value },
+                -on_submit => sub ($app, $node, $new_value) { push @submits, $new_value },
+                -on_cancel => sub ($app, $node, $old_value) { push @cancels, $old_value },
+                -margin => 0;
+        } -margin => 0;
+    } -state => {};
+
+    ok($app->update(0.1, Event::key_press("\n")), 'enter activates textfield');
+    ok($app->update(0.1, Event::key_press('a')), 'invalid character appended in draft');
+    ok($app->update(0.1, Event::key_press("\n")), 'invalid candidate blocks commit');
+
+    ok($app->update(0.1, Event::key_press("\x7f")), 'invalid draft can still backspace while edit mode is retained');
+    ok($app->update(0.1, Event::key_press('1')), 'valid char added after failed commit');
+    ok($app->update(0.1, Event::key_press("\n")), 'valid candidate commits after correction');
+
+    is($value, '1', 'field remains committed only after valid draft');
+    is_deeply(\@changes, ['1'], 'change callback does not run for invalid draft');
+    is_deeply(\@submits, ['1'], 'submit callback runs only after valid commit');
+    is_deeply(\@cancels, [], 'invalid draft is not cancelled');
+};
+
+subtest 'TextField uses validator callbacks and on_invalid reporting' => sub {
+    my $value = 'init';
+    my $invalid_message;
+    my $calls = 0;
+    my @changes;
+    my @submits;
+
+    my $app = App {
+        InputRoot {
+            TextField {}
+                -value_ref => \$value,
+                -validate => sub ($app, $renderer, $node, $candidate) {
+                    $calls++;
+                    return $candidate =~ /^ok$/;
+                },
+                -on_change => sub ($app, $node, $new_value) { push @changes, $new_value },
+                -on_submit => sub ($app, $node, $new_value) { push @submits, $new_value },
+                -on_invalid => sub ($app, $node, $candidate) { $invalid_message = "invalid:$candidate" },
+                -margin => 0;
+        } -margin => 0;
+    } -state => {};
+
+    ok($app->update(0.1, Event::key_press("\n")), 'enter activates textfield');
+    ok($app->update(0.1, Event::key_press('x')), 'invalid draft for callback validator');
+    ok($app->update(0.1, Event::key_press("\n")), 'callback validator blocks commit');
+    ok($app->update(0.1, Event::key_press("\x7f")), 'invalid draft is editable');
+    ok($app->update(0.1, Event::key_press('o')), 'validator test char');
+    ok($app->update(0.1, Event::key_press('k')), 'validator test char');
+    ok($app->update(0.1, Event::key_press("\n")), 'valid callback candidate commits');
+
+    is($calls, 2, 'validator callback is invoked on each commit attempt');
+    is($value, 'ok', 'callback validator allows a valid commit');
+    is($invalid_message, 'invalid:x', 'on_invalid callback receives failed candidate');
+    is_deeply(\@changes, ['ok'], 'change callback runs only after valid callback validator commit');
+    is_deeply(\@submits, ['ok'], 'submit callback runs only after valid callback validator commit');
+};
+
+subtest 'TextField -validate requires regex or coderef' => sub {
+    my $value = '';
+
+    dies_ok {
+        my $app = App {
+            InputRoot {
+                TextField {}
+                    -value_ref => \$value,
+                    -validate => [],
+                    -margin => 0;
+            } -margin => 0;
+        } -state => {};
+        $app->update(0.1, Event::key_press("\n"));
+    } qr/TextField -validate must be a coderef or regex/;
 };
 
 subtest 'List keeps j/k in local domain and J exits to sibling branch' => sub {
