@@ -164,6 +164,8 @@ run_case "17-stdout-report.pl" "space" 0 0 "completed" "stdout=;stderr=" "" "pay
 run_case "18-multi-step-progress.pl" "space" 0 0 "completed" "result.steps=5;stdout=;stderr=" "" ""
 run_case "19-form-confirm.pl" "J space" 0 0 "completed" "result.name=Nova;stdout=;stderr=" "" ""
 run_case "20-full-lifecycle.pl" "j space j j J j space" 0 0 "completed" "result.safe=no;stdout=;stderr=" "" "launch:ASH:Archive"
+run_case "23-tabs-help-modal.pl" "space space j space" 0 0 "completed" "result.help_seen=1;result.label=launch;result.returns=1;stdout=;stderr=" "" ""
+run_case "24-tabs-settings.pl" "space space j space j space" 0 0 "completed" "result.label=deploy;result.safe_mode=off;stdout=;stderr=" "" ""
 
 if [ "$status" -eq 0 ]; then
     echo "All runnable examples verified successfully."

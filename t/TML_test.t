@@ -11,7 +11,7 @@ use ZTUI::Renderers;
 use ZTUI::TerminalBorderStyle;
 use ZTUI::TerminalStyle;
 use ZTUI::Theme;
-use ZTUI::TML qw(App Layer VBox HBox BBox Rect Text InputRoot FocusScope Button Toggle TextField List FieldList TextViewport ButtonRow OnKey OnUpdate);
+use ZTUI::TML qw(App Layer VBox HBox BBox Tabs Tab Rect Text InputRoot FocusScope Button Toggle TextField List FieldList TextViewport ButtonRow OnKey OnUpdate);
 
 {
     package TMLTest::MaterialMapper;
@@ -783,6 +783,171 @@ subtest 'custom InputRoot keymap overrides default navigation bindings' => sub {
     ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'overridden navigation still preserves activation dispatch');
     is($result, 'no', 'custom keymap replaced default local navigation');
     ok($app->update(0.1, ZTUI::Event::key_press('j')), 'unbound default key falls through without quitting');
+};
+
+subtest 'default keymap supports h l H L aliases' => sub {
+    my $result = 'pending';
+
+    my $app = App {
+        InputRoot {
+            FocusScope {
+                HBox {
+                    ButtonRow {
+                        Button {} -label => 'Alpha', -focused_material => 'FOCUS', -margin => 0;
+                        Button {} -label => 'Bravo', -focused_material => 'FOCUS', -margin => 0;
+                    } -margin => 0;
+                    Button {} -label => 'Run', -focused_material => 'FOCUS', -on_press => sub ($app, $node) {
+                        $result = 'run';
+                    }, -margin => 0;
+                } -gap => 1, -margin => 0;
+            } -margin => 0;
+        } -margin => 0;
+    } -state => {};
+
+    ok($app->update(0.1, ZTUI::Event::key_press('l')), 'l moves local focus forward');
+    ok($app->update(0.1, ZTUI::Event::key_press('h')), 'h moves local focus backward');
+    ok($app->update(0.1, ZTUI::Event::key_press('L')), 'L exits to next branch');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'focus moved via L can activate sibling branch');
+    is($result, 'run', 'uppercase horizontal alias moves focus across branch containers');
+    ok($app->update(0.1, ZTUI::Event::key_press('H')), 'H exits back to previous branch');
+};
+
+subtest 'Tabs validates child names and defaults active tab' => sub {
+    throws_ok(
+        sub {
+        App {
+            Tabs {
+                Tab {
+                    Text {} -text => 'missing';
+                } -margin => 0;
+            } -margin => 0;
+        } -state => {};
+        },
+        qr/Tabs children require -name/,
+        'tabs reject missing child names',
+    );
+
+    throws_ok(
+        sub {
+        App {
+            Tabs {
+                Tab {
+                    Text {} -text => 'A';
+                } -name => 'dup', -margin => 0;
+                Tab {
+                    Text {} -text => 'B';
+                } -name => 'dup', -margin => 0;
+            } -margin => 0;
+        } -state => {};
+        },
+        qr/Tabs child -name values must be unique/,
+        'tabs reject duplicate child names',
+    );
+
+    throws_ok(
+        sub {
+        App {
+            Tabs {
+                Tab {
+                    Text {} -text => 'A';
+                } -name => 'alpha', -margin => 0;
+            } -active => 'beta', -margin => 0;
+        } -state => {};
+        },
+        qr/Tabs -active must name an existing tab/,
+        'tabs reject unknown initial active tab',
+    );
+
+    my $app = App {
+        Tabs {
+            Tab {
+                Text {} -text => 'A', -material => 'A';
+            } -name => 'alpha', -margin => 0;
+            Tab {
+                Text {} -text => 'B', -material => 'B';
+            } -name => 'beta', -margin => 0;
+        } -margin => 0;
+    } -state => {};
+
+    my $tabs = $app->{root}{children}[0];
+    isa_ok($tabs, 'ZTUI::TML::Runtime::Tabs', 'Tabs builder returns runtime-backed tabs node');
+    is($tabs->active_tab_name, 'alpha', 'first child becomes active by default');
+};
+
+subtest 'Tabs render only the active child and invalidate layout on switch' => sub {
+    my $app = App {
+        HBox {
+            Tabs {
+                Tab {
+                    Text {} -text => 'ABCD', -material => 'A', -margin => 0;
+                } -name => 'wide', -margin => 0;
+                Tab {
+                    Text {} -text => 'X', -material => 'X', -margin => 0;
+                } -name => 'narrow', -margin => 0;
+            } -active => 'wide', -margin => 0;
+            Text {} -text => 'Z', -material => 'B', -margin => 0;
+        } -gap => 0, -margin => 0;
+    } -state => {};
+
+    my $renderer_before = mk_renderer(6, 20);
+    $app->render($renderer_before);
+    is_deeply(world_cell($renderer_before, 0, 0), [ord('A'), 6, -1, -1], 'active tab renders its content');
+    is_deeply(world_cell($renderer_before, 4, 0), [ord('Z'), 7, -1, -1], 'sibling layout reflects active tab width');
+
+    my $tabs = $app->{root}{children}[0]{children}[0];
+    $tabs->open_modal('narrow');
+
+    my $renderer_after = mk_renderer(6, 20);
+    $app->render($renderer_after);
+    is_deeply(world_cell($renderer_after, 0, 0), [ord('X'), 5, -1, -1], 'newly active tab renders after switch');
+    is_deeply(world_cell($renderer_after, 1, 0), [ord('Z'), 7, -1, -1], 'layout cache was invalidated for new tab width');
+    is_deeply(world_cell($renderer_after, 2, 0), [ord(' '), 0xffffff, 0x000000, 0], 'inactive tab no longer draws background content');
+};
+
+subtest 'Tabs route input only to the active child and restore tab-local focus' => sub {
+    my @pressed;
+
+    my $app = App {
+        Tabs {
+            Tab {
+                InputRoot {
+                    ButtonRow {
+                        Button {} -label => 'Alpha', -focused_material => 'FOCUS', -on_press => sub ($app, $node) {
+                            push @pressed, 'alpha';
+                        }, -margin => 0;
+                        Button {} -label => 'Beta', -focused_material => 'FOCUS', -on_press => sub ($app, $node) {
+                            push @pressed, 'beta';
+                        }, -margin => 0;
+                    } -margin => 0;
+                } -margin => 0;
+            } -name => 'main', -margin => 0;
+            Tab {
+                InputRoot {
+                    Button {} -label => 'Help', -focused_material => 'FOCUS', -on_press => sub ($app, $node) {
+                        push @pressed, 'help';
+                    }, -margin => 0;
+                } -margin => 0;
+            } -name => 'help', -margin => 0;
+        } -active => 'main', -margin => 0;
+    } -state => {};
+
+    my $tabs = $app->{root}{children}[0];
+
+    ok($app->update(0.1, ZTUI::Event::key_press('j')), 'main tab consumes local navigation');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'focused control in main tab handles activation');
+    is_deeply(\@pressed, ['beta'], 'input is delivered to currently active tab');
+
+    $tabs->open_modal('help');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'help tab handles activation after switch');
+    is_deeply(\@pressed, ['beta', 'help'], 'inactive main tab does not receive activation while hidden');
+
+    $tabs->open_modal('main');
+    ok($app->update(0.1, ZTUI::Event::key_press(' ')), 'main tab handles activation after returning');
+    is_deeply(\@pressed, ['beta', 'help', 'beta'], 'tab-local focus is restored when switching back');
+
+    my $renderer = mk_renderer(6, 30);
+    $app->render($renderer);
+    is_deeply(world_cell($renderer, 8, 0), [ord('['), 10, -1, 1], 'restored focus renders on the previously focused control');
 };
 
 subtest 'App lifecycle validates callbacks and runs setup once' => sub {

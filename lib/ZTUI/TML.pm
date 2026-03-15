@@ -14,6 +14,8 @@ our @EXPORT_OK = qw(
     VBox
     HBox
     BBox
+    Tabs
+    Tab
     Rect
     Text
     InputRoot
@@ -106,6 +108,7 @@ sub App :prototype(&;@) {
     local @BUILD_STACK = ($root);
     $block->();
 
+    $app->_finalize_tree();
     return $app;
 }
 
@@ -127,6 +130,18 @@ sub HBox :prototype(&;@) {
 sub BBox :prototype(&;@) {
     my ($block, @args) = @_;
     _build_node('BBox', $block, @args);
+}
+
+sub Tabs :prototype(&;@) {
+    my ($block, @args) = @_;
+    my $node = _build_node('Tabs', $block, @args);
+    bless $node, 'ZTUI::TML::Runtime::Tabs';
+    return $node;
+}
+
+sub Tab :prototype(&;@) {
+    my ($block, @args) = @_;
+    _build_node('Tab', $block, @args);
 }
 
 sub Rect :prototype(&;@) {
@@ -291,6 +306,139 @@ package ZTUI::TML::Runtime::App {
     sub action_stderr($self) { $self->{lifecycle}{action}{stderr} }
 
     sub action_exit_code($self) { $self->{lifecycle}{action}{exit_code} }
+
+    sub _finalize_tree($self) {
+        $self->_finalize_node($self->{root});
+        return;
+    }
+
+    sub _finalize_node($self, $node, $parent = undef) {
+        return unless defined $node;
+
+        $node->{parent} = $parent if defined $parent;
+        if (($node->{type} // '') eq 'Tabs') {
+            $node->{app} = $self;
+            $self->_tabs_rebuild_registry($node);
+        }
+
+        for my $child ($node->{children}->@*) {
+            $self->_finalize_node($child, $node);
+        }
+
+        return;
+    }
+
+    sub _tabs_rebuild_registry($self, $tabs) {
+        confess "tabs node is required"
+            unless defined $tabs && (($tabs->{type} // '') eq 'Tabs');
+
+        my %registry;
+        my @order;
+        for my $child ($tabs->{children}->@*) {
+            my $name = $child->{props}{name};
+            confess "Tabs children require -name"
+                unless defined($name) && !ref($name) && length($name);
+            confess "Tabs child -name values must be unique"
+                if exists $registry{$name};
+            $registry{$name} = $child;
+            push @order, $name;
+        }
+
+        my $active = $tabs->{active_tab_name};
+        $active = $tabs->{props}{active} unless defined $active;
+        if (defined $active) {
+            confess "Tabs -active must be a non-empty string"
+                if ref($active) || !length($active);
+            confess "Tabs -active must name an existing tab"
+                unless exists $registry{$active};
+        } elsif (@order) {
+            $active = $order[0];
+        }
+
+        $tabs->{tab_registry} = \%registry;
+        $tabs->{tab_order} = \@order;
+        $tabs->{active_tab_name} = $active;
+        $tabs->{focus_by_tab_name} //= {};
+        return;
+    }
+
+    sub _tabs_active_name($self, $tabs) {
+        return undef unless defined $tabs;
+        return $tabs->{active_tab_name};
+    }
+
+    sub _tabs_active_child($self, $tabs) {
+        return undef unless defined $tabs;
+        my $active = $self->_tabs_active_name($tabs);
+        return undef unless defined $active;
+        return $tabs->{tab_registry}{$active};
+    }
+
+    sub _runtime_children($self, $node) {
+        return [] unless defined $node;
+        return $node->{children} unless ($node->{type} // '') eq 'Tabs';
+
+        my $active = $self->_tabs_active_child($node);
+        return [] unless defined $active;
+        return [$active];
+    }
+
+    sub _node_is_descendant_of_node($self, $node, $ancestor) {
+        return 0 unless defined $node && defined $ancestor;
+        my $want_id = $self->_cache_node_id($ancestor);
+        my $cursor = $node;
+        while (defined $cursor) {
+            return 1 if $self->_cache_node_id($cursor) == $want_id;
+            $cursor = $cursor->{parent};
+        }
+        return 0;
+    }
+
+    sub _restore_tab_focus($self, $tabs) {
+        return unless defined $tabs;
+        my $active = $self->_tabs_active_name($tabs);
+        return unless defined $active;
+        $self->{interactive_state}{focused_node_id} = $tabs->{focus_by_tab_name}{$active};
+        return;
+    }
+
+    sub _switch_tabs_to($self, $tabs, $tab_name) {
+        confess "tab name is required"
+            unless defined($tab_name) && !ref($tab_name) && length($tab_name);
+        confess "unknown tab '$tab_name'"
+            unless defined($tabs) && exists($tabs->{tab_registry}{$tab_name});
+
+        my $current = $self->_tabs_active_name($tabs);
+        if (defined $current) {
+            my $focused_id = $self->{interactive_state}{focused_node_id};
+            if (defined $focused_id) {
+                my $focused = $self->_find_node_by_id($focused_id, $self->{root});
+                if (defined $focused) {
+                    my $active_child = $tabs->{tab_registry}{$current};
+                    if ($self->_node_is_descendant_of_node($focused, $active_child)) {
+                        $tabs->{focus_by_tab_name}{$current} = $focused_id;
+                    }
+                }
+            }
+        }
+
+        $tabs->{active_tab_name} = $tab_name;
+        $self->{layout_cache} = {};
+        $self->{frame_layout_cache} = {};
+        $self->{interactive_state}{active_root_id} = undef;
+        $self->_restore_tab_focus($tabs);
+        return;
+    }
+
+    sub _find_node_by_id($self, $node_id, $node) {
+        return undef unless defined $node_id && defined $node;
+        return $node if $self->_cache_node_id($node) == $node_id;
+        for my $child ($node->{children}->@*) {
+            my $found = $self->_find_node_by_id($node_id, $child);
+            return $found if defined $found;
+        }
+        return undef;
+    }
 
     sub _run_setup_callback($self, $runtime_info) {
         return $self->runtime_info if $self->{lifecycle}{setup_done};
@@ -575,7 +723,7 @@ package ZTUI::TML::Runtime::App {
             push @$roots, $node;
         }
 
-        for my $child ($node->{children}->@*) {
+        for my $child ($self->_runtime_children($node)->@*) {
             $self->_interactive_root_nodes($child, $roots);
         }
 
@@ -606,7 +754,7 @@ package ZTUI::TML::Runtime::App {
             push @$accum, $node;
         }
 
-        for my $child ($node->{children}->@*) {
+        for my $child ($self->_runtime_children($node)->@*) {
             $self->_collect_focusable_nodes($child, $accum);
         }
 
@@ -652,8 +800,9 @@ package ZTUI::TML::Runtime::App {
         my $node_id = $self->_interactive_node_id($node);
         $node_by_id->{$node_id} = $node;
         $parent_by_id->{$node_id} = defined($parent) ? $self->_interactive_node_id($parent) : undef;
-        $children_by_id->{$node_id} = [ $node->{children}->@* ];
-        for my $child ($node->{children}->@*) {
+        my $children = $self->_runtime_children($node);
+        $children_by_id->{$node_id} = [ $children->@* ];
+        for my $child ($children->@*) {
             $self->_interactive_tree_walk($child, $node, $node_by_id, $parent_by_id, $children_by_id);
         }
         return;
@@ -669,6 +818,7 @@ package ZTUI::TML::Runtime::App {
         return 1 if $type eq 'ButtonRow';
         return 1 if $type eq 'BBox';
         return 1 if $type eq 'Layer';
+        return 1 if $type eq 'Tabs';
         return 0;
     }
 
@@ -823,10 +973,10 @@ package ZTUI::TML::Runtime::App {
 
     sub _focus_keymap_defaults($self) {
         return {
-            next => ['j'],
-            prev => ['k'],
-            exit_next => ['J'],
-            exit_prev => ['K'],
+            next => ['j', 'l'],
+            prev => ['k', 'h'],
+            exit_next => ['J', 'L'],
+            exit_prev => ['K', 'H'],
         };
     }
 
@@ -2253,6 +2403,24 @@ package ZTUI::TML::Runtime::App {
             return $result->@*;
         }
 
+        if ($type eq 'Tabs') {
+            my $active_child = $self->_tabs_active_child($node);
+            my ($natural_w, $natural_h) = defined($active_child)
+                ? $self->_children_extent($renderer, $node, [$active_child], $inner_parent_w, $inner_parent_h)
+                : (0, 0);
+            my $w = exists $props->{width}
+                ? $self->_resolve_length($renderer, $node, $props->{width}, $inner_parent_w, 'width', $natural_w)
+                : $natural_w;
+            my $h = exists $props->{height}
+                ? $self->_resolve_length($renderer, $node, $props->{height}, $inner_parent_h, 'height', $natural_h)
+                : $natural_h;
+            $w = 0 if $w < 0;
+            $h = 0 if $h < 0;
+            my $result = [$w + $margin_left + $margin_right, $h + $margin_top + $margin_bottom];
+            $self->_cache_store('node_dimensions', $node, $parent_w, $parent_h, $result);
+            return $result->@*;
+        }
+
         my ($natural_w, $natural_h) = $self->_children_extent(
             $renderer,
             $node,
@@ -2409,7 +2577,13 @@ package ZTUI::TML::Runtime::App {
         } elsif ($node->{type} eq 'BBox') {
             $self->_render_bbox($renderer, $node, $content_local, $inner_parent_w, $inner_parent_h);
             return;
-        } elsif ($node->{type} eq 'InputRoot' || $node->{type} eq 'FocusScope') {
+        } elsif ($node->{type} eq 'Tabs') {
+            my $active_child = $self->_tabs_active_child($node);
+            if (defined $active_child) {
+                $self->_render_node($renderer, $active_child, $content_local, $inner_parent_w, $inner_parent_h);
+            }
+            return;
+        } elsif ($node->{type} eq 'Tab' || $node->{type} eq 'InputRoot' || $node->{type} eq 'FocusScope') {
             for my $child ($node->{children}->@*) {
                 $self->_render_node($renderer, $child, $content_local, $inner_parent_w, $inner_parent_h);
             }
@@ -2472,6 +2646,29 @@ package ZTUI::TML::Runtime::App {
     }
 }
 
+package ZTUI::TML::Runtime::Tabs {
+    use v5.36;
+    use Carp;
+
+    sub open_modal($self, $tab_name) {
+        my $app = $self->{app};
+        confess "Tabs node is not bound to an app"
+            unless defined $app;
+        $app->_switch_tabs_to($self, $tab_name);
+        return;
+    }
+
+    sub active_tab_name($self) {
+        return $self->{active_tab_name};
+    }
+
+    sub active_tab($self) {
+        my $active = $self->{active_tab_name};
+        return undef unless defined $active;
+        return $self->{tab_registry}{$active};
+    }
+}
+
 1;
 
 __END__
@@ -2482,7 +2679,7 @@ TML - Block-based Perl EDSL for terminal widget trees
 
 =head1 SYNOPSIS
 
-    use ZTUI::TML qw(App Layer InputRoot VBox BBox Rect Text Button OnKey OnUpdate);
+    use ZTUI::TML qw(App Layer Tabs Tab InputRoot VBox BBox Rect Text Button OnKey OnUpdate);
     use InputTheme;
 
     my $ui = App {
@@ -2560,7 +2757,7 @@ arrayref.
 
 All functions are exported on demand via C<@EXPORT_OK>:
 
-    App Layer VBox HBox BBox Rect Text InputRoot FocusScope Button Toggle TextField List FieldList TextViewport ButtonRow OnKey OnUpdate
+    App Layer VBox HBox BBox Tabs Tab Rect Text InputRoot FocusScope Button Toggle TextField List FieldList TextViewport ButtonRow OnKey OnUpdate
 
 =head1 APP
 
@@ -2848,6 +3045,62 @@ Optional outer size, minimum 2x2.
 Content alignment inside the inner area (after subtracting border thickness).
 
 =back
+
+=head2 Tabs
+
+Single-foreground container. Only the active named child tab participates in
+layout, rendering, and interactive focus/input traversal.
+
+Options:
+
+=over 4
+
+=item * C<-active> (optional)
+
+Initial active tab name. If omitted, the first child tab becomes active.
+
+=item * C<-width>, C<-height>
+
+Optional outer size constraints, resolved against the active tab only.
+
+=back
+
+Each direct child of C<Tabs> must provide a unique, non-empty C<-name>.
+Use C<Tab> for clarity when declaring those children:
+
+    my $tabs = Tabs {
+        Tab {
+            Text {} -text => 'Main screen';
+        } -name => 'main', -margin => 0;
+        Tab {
+            Text {} -text => 'Help modal';
+            Button {} -label => 'Back', -on_press => sub ($app, $node) {
+                $tabs->open_modal('main');
+            }, -margin => 0;
+        } -name => 'help', -margin => 0;
+    } -active => 'main', -margin => 0;
+
+Tabs runtime methods:
+
+=over 4
+
+=item * C<< $tabs->open_modal($name) >>
+
+Switches the active tab to C<$name>. Invalid or unknown names fail via
+C<confess>.
+
+=item * C<< $tabs->active_tab_name >>
+
+Returns the current active tab name.
+
+=back
+
+=head2 Tab
+
+Transparent named child container intended for use directly under C<Tabs>.
+It does not render chrome of its own; it only groups the content for one named
+tab region. C<Tab> accepts the same common positional/layout options as other
+container nodes, plus the required C<-name> when used under C<Tabs>.
 
 =head1 RUNTIME OBJECT
 

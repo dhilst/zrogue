@@ -820,27 +820,28 @@ my $app = App {
           -y => sub ($app, $renderer, $node) { int(($renderer->height // 0) / 2) };
     };
 
-    Layer {
-        Rect {} -width => sub { $state->{help_visible} ? '100%' : 0 },
-            -height => sub { $state->{help_visible} ? '100%' : 0 },
-            -material => 'BACKDROP',
-            -x => sub ($app, $renderer, $node) { -int(($renderer->width // 0) / 2) },
-            -y => sub ($app, $renderer, $node) { int(($renderer->height // 0) / 2) };
-        BBox {
-            TextViewport {}
-                -lines_ref => \@help_lines,
-                -scroll_ref => \$state->{help_scroll},
-                -width => '100%',
-                -height => '100%',
-                -margin => 0;
-        } -width => sub { $state->{help_visible} ? '100%' : 0 },
-          -height => sub { $state->{help_visible} ? '100%' : 0 },
-          -material => 'PANEL',
-          -border_material => 'FRAME',
-          -margin => 0,
-          -x => sub ($app, $renderer, $node) { -int(($renderer->width // 0) / 2) },
-          -y => sub ($app, $renderer, $node) { int(($renderer->height // 0) / 2) };
-    };
+    # Temporary: help modal disabled for debugging.
+    # Layer {
+    #     Rect {} -width => sub { $state->{help_visible} ? '100%' : 0 },
+    #         -height => sub { $state->{help_visible} ? '100%' : 0 },
+    #         -material => 'BACKDROP',
+    #         -x => sub ($app, $renderer, $node) { -int(($renderer->width // 0) / 2) },
+    #         -y => sub ($app, $renderer, $node) { int(($renderer->height // 0) / 2) };
+    #     BBox {
+    #         TextViewport {}
+    #             -lines_ref => \@help_lines,
+    #             -scroll_ref => \$state->{help_scroll},
+    #             -width => '100%',
+    #             -height => '100%',
+    #             -margin => 0;
+    #     } -width => sub { $state->{help_visible} ? '100%' : 0 },
+    #       -height => sub { $state->{help_visible} ? '100%' : 0 },
+    #       -material => 'PANEL',
+    #       -border_material => 'FRAME',
+    #       -margin => 0,
+    #       -x => sub ($app, $renderer, $node) { -int(($renderer->width // 0) / 2) },
+    #       -y => sub ($app, $renderer, $node) { int(($renderer->height // 0) / 2) };
+    # };
 };
 
 $app->run($top_tool_theme);
